@@ -50,8 +50,8 @@ const STATUS_NAMES = {
   3: "Listo",
 };
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://rsjondlejagmnjrmbolf.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_A86Q2r3lrF6z14HunWuuwQ_Y-G8ziVV";
 
 function formatDate(value, fallback = "Pendiente") {
   if (!value) return fallback;

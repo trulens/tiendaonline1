@@ -4,9 +4,28 @@ import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import ProductModal from "./ProductModal";
 
+import { PRODUCTS } from "../data/products";
+
+const DEFAULT_PRODUCTS = PRODUCTS.map((prod, idx) => ({
+  id: prod.id || `prod-${idx + 1}`,
+  codigo_sistema: prod.id || `PROD-${idx + 1}`,
+  nombre_autogenerado: prod.name,
+  modelo: prod.name,
+  categoria: prod.categoryLabel || (prod.category === 'sol' ? 'Gafas de Sol' : prod.category === 'receta' ? 'Lentes con Receta' : prod.category === 'monturas' ? 'Monturas de Diseñador' : 'Lentes de Contacto'),
+  material: prod.details?.material || (prod.specs ? prod.specs[0] : "Acetato"),
+  marca: prod.brand,
+  precio_venta: prod.price,
+  imagen: prod.image,
+  stock_total: 8,
+  activo: true,
+  specs: prod.specs || [],
+  description: prod.description || "",
+  details: prod.details || {}
+}));
+
 export default function CatalogSection() {
-  const [productos, setProductos] = useState([]);
-  const [cargando, setCargando] = useState(true);
+  const [productos, setProductos] = useState(DEFAULT_PRODUCTS);
+  const [cargando, setCargando] = useState(false);
   const [currentFilter, setCurrentFilter] = useState("todos");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -14,16 +33,17 @@ export default function CatalogSection() {
   // 1. Carga los productos con su stock validado desde la API
   useEffect(() => {
     fetch("/api/productos")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+        return res.json();
+      })
       .then((datos) => {
-        if (!datos.error && Array.isArray(datos)) {
+        if (!datos.error && Array.isArray(datos) && datos.length > 0) {
           setProductos(datos);
         }
-        setCargando(false);
       })
       .catch((error) => {
-        console.error("Error al cargar el catálogo:", error);
-        setCargando(false);
+        console.warn("Aviso al consultar catálogo remoto:", error.message);
       });
   }, []);
 

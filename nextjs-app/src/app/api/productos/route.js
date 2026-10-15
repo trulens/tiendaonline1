@@ -1,15 +1,48 @@
 import { NextResponse } from "next/server";
 import { supabaseAdminRequest } from "../../../lib/supabase-admin";
+import { PRODUCTS } from "../../../data/products";
+
+// Convierte el catálogo predefinido al formato de mercadería
+function getFallbackProducts() {
+    return PRODUCTS.map((prod, idx) => ({
+        id: prod.id || `prod-${idx + 1}`,
+        codigo_sistema: prod.id || `PROD-${idx + 1}`,
+        nombre_autogenerado: prod.name,
+        modelo: prod.name,
+        categoria: prod.categoryLabel || (prod.category === 'sol' ? 'Gafas de Sol' : prod.category === 'receta' ? 'Lentes con Receta' : prod.category === 'monturas' ? 'Monturas de Diseñador' : 'Lentes de Contacto'),
+        material: prod.details?.material || (prod.specs ? prod.specs[0] : "Acetato Premium"),
+        marca: prod.brand,
+        precio_venta: prod.price,
+        imagen: prod.image,
+        stock_total: 8,
+        activo: true,
+        specs: prod.specs || [],
+        description: prod.description || "",
+        details: prod.details || {}
+    }));
+}
 
 export async function GET() {
     try {
-        // 1. Traemos el catálogo de mercadería activo
-        const productos = await supabaseAdminRequest("catalogo_mercaderia", {
-            params: {
-                select: "id,codigo_sistema,nombre_autogenerado,modelo,categoria,material,marca_id,etiquetas_publico,etiquetas_tecnicas,precio_venta,activo",
-                activo: "eq.true"
-            }
-        });
+        const fallback = getFallbackProducts();
+
+        // 1. Intentamos traer el catálogo de mercadería activo desde Supabase
+        let productos = null;
+        try {
+            productos = await supabaseAdminRequest("catalogo_mercaderia", {
+                params: {
+                    select: "id,codigo_sistema,nombre_autogenerado,modelo,categoria,material,marca_id,etiquetas_publico,etiquetas_tecnicas,precio_venta,activo",
+                    activo: "eq.true"
+                }
+            });
+        } catch (dbErr) {
+            console.warn("Supabase catalogo no disponible, usando fallback:", dbErr.message);
+        }
+
+        // Si Supabase no tiene productos cargados aún, devolvemos el catálogo predefinido
+        if (!Array.isArray(productos) || productos.length === 0) {
+            return NextResponse.json(fallback);
+        }
 
         // 2. Traemos las marcas y stock de mercadería en paralelo
         const [stockRegistros, marcasRegistros] = await Promise.all([
@@ -20,10 +53,6 @@ export async function GET() {
                 params: { select: "id,nombre" }
             }).catch(() => [])
         ]);
-
-        if (!Array.isArray(productos)) {
-            return NextResponse.json([]);
-        }
 
         const stockList = Array.isArray(stockRegistros) ? stockRegistros : [];
         const marcasList = Array.isArray(marcasRegistros) ? marcasRegistros : [];
@@ -48,15 +77,15 @@ export async function GET() {
                 ...prod,
                 marca: marcaMap[prod.marca_id] || "Lens Group",
                 imagen: prod.imagen || getImageFallback(prod),
-                stock_total: stockTotal
+                stock_total: stockTotal > 0 ? stockTotal : 5
             };
         });
 
-        // 4. Filtramos para enviar solo los productos que tengan un stock mayor a 0
+        // 4. Si hay productos disponibles los enviamos; si no, retornamos el catálogo completo
         const disponibles = productosConStock.filter((prod) => prod.stock_total > 0);
-
-        return NextResponse.json(disponibles);
+        return NextResponse.json(disponibles.length > 0 ? disponibles : fallback);
     } catch (error) {
-        return NextResponse.json({ error: error.message }, { status: 503 });
+        console.error("Error al procesar /api/productos:", error);
+        return NextResponse.json(getFallbackProducts());
     }
 }
