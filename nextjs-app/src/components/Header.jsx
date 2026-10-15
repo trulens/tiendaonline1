@@ -70,9 +70,6 @@ export default function Header() {
             <Link href="/seguimiento" className="nav-link" title="Seguimiento de Pedido" onClick={closeMenu}>
               Seguimiento
             </Link>
-            <Link href="/admin" className="nav-link" title="Portal Staff y Toma de Decisiones" onClick={closeMenu} style={{ color: "var(--color-teal-400)", fontWeight: "600" }}>
-              Portal Staff
-            </Link>
 
             {/* Mobile Drawer CTA */}
             <div className="nav-menu-divider"></div>
@@ -83,22 +80,9 @@ export default function Header() {
 
           {/* Nav Actions */}
           <div className="nav-actions">
-            <a
-              href="https://wa.me/51958169535?text=Hola%20Lens%20Group%20Trujillo,%20deseo%20m%C3%A1s%20informaci%C3%B3n"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-whatsapp btn-sm"
-              title="Atención directa por WhatsApp"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.664-.699c.99.54 1.776.84 2.8.84 3.18 0 5.767-2.587 5.768-5.766.001-3.181-2.586-5.766-5.772-5.766zm8.845 5.767c-.002 4.887-3.974 8.859-8.861 8.859-1.547 0-3.056-.408-4.381-1.182l-4.872 1.278 1.301-4.747c-.854-1.378-1.309-2.977-1.31-4.208 0-4.888 3.973-8.86 8.861-8.86 4.888.001 8.862 3.973 8.862 8.86z" />
-              </svg>
-              WhatsApp
-            </a>
             <Link href="/#contacto" className="btn btn-navy btn-sm btn-contact">
               Agendar Cita
             </Link>
-
           </div>
         </div>
       </header>
