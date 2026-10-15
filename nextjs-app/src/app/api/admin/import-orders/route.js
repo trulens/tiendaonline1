@@ -1,7 +1,6 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { NextResponse } from "next/server";
 import { requireAdminSession, supabaseAdminRequest } from "../../../../lib/supabase-admin";
+import { ORDERS_DB } from "../../../../data/orders";
 
 function parseSpanishDate(value) {
   if (!value) return null;
@@ -16,9 +15,7 @@ export async function POST(request) {
   if (!session) return NextResponse.json({ error: "Sesión administrativa requerida." }, { status: 401 });
 
   try {
-    const source = path.join(process.cwd(), "..", "orders.json");
-    const orders = JSON.parse(await fs.readFile(source, "utf8"));
-    const entries = Object.values(orders);
+    const entries = Object.values(ORDERS_DB || {});
     let imported = 0;
     let skipped = 0;
 
