@@ -284,7 +284,7 @@
             { label: 'Lunas Progresivas Digitales', href: '#catalogo' },
             { label: 'Lentes de Contacto', href: '#catalogo' },
             { label: 'Seguimiento de Pedido', href: 'seguimiento.html', style: 'color: var(--color-teal-300);' },
-            { label: 'Portal &amp; Dashboard BI', href: 'admin.html', style: 'color: var(--color-teal-400); font-weight: 700;' }
+            { label: 'Portal &amp; Dashboard BI', href: '/admin', style: 'color: var(--color-teal-400); font-weight: 700;' }
           ]
         },
         tracking: {

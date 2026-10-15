@@ -31,7 +31,7 @@
               ${LG.icon('star', { size: 13 })}
               ${s.badge}
             </span>
-            <a href="admin.html" class="top-bar-admin-link" title="Portal Staff y Toma de Decisiones">
+            <a href="/admin" class="top-bar-admin-link" title="Portal Staff y Toma de Decisiones">
               ${LG.icon('lock', { size: 12, sw: 2.2 })}
               Portal Staff
             </a>
