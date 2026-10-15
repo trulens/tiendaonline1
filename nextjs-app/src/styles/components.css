@@ -72,6 +72,29 @@ body {
   font-size: 0.75rem;
 }
 
+.top-bar-admin-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff !important;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  margin-left: 0.75rem;
+}
+
+.top-bar-admin-link:hover {
+  background: var(--color-teal-600);
+  border-color: var(--color-teal-500);
+  color: #ffffff !important;
+  transform: translateY(-1px);
+}
+
 /* --------------------------------------------------------------------------
    2. HEADER & STICKY NAVBAR
    -------------------------------------------------------------------------- */

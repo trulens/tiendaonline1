@@ -70,6 +70,9 @@ export default function Header() {
             <Link href="/seguimiento" className="nav-link" title="Seguimiento de Pedido" onClick={closeMenu}>
               Seguimiento
             </Link>
+            <Link href="/admin" className="nav-link" title="Portal Staff y Toma de Decisiones" onClick={closeMenu} style={{ color: "var(--color-teal-400)", fontWeight: "600" }}>
+              Portal Staff
+            </Link>
 
             {/* Mobile Drawer CTA */}
             <div className="nav-menu-divider"></div>
