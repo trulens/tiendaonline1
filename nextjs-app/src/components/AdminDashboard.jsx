@@ -3,7 +3,6 @@
 import { useEffect, useState, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import "../styles/admin-dashboard.css";
 
 const STATES = ["cola", "proceso", "listo"];
 
@@ -13,12 +12,10 @@ export default function AdminDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("overview"); // overview, orders, patients, inventory, sales
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [activeTab, setActiveTab] = useState("home"); // home, orders, patients, inventory, sales
   const [searchQuery, setSearchQuery] = useState("");
-  const [salesTimeframe, setSalesTimeframe] = useState("7d"); // 7d, 30d
-  const [chartHover, setChartHover] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [hoverBar, setHoverBar] = useState(null);
 
   // Formulario nuevo paciente
   const [patient, setPatient] = useState({
@@ -27,12 +24,11 @@ export default function AdminDashboard() {
     apellido_paterno: "",
     apellido_materno: "",
     celular: "",
-    edad: ""
   });
   const [savingPatient, setSavingPatient] = useState(false);
   const [patientSuccess, setPatientSuccess] = useState("");
 
-  // Cargar métricas del panel
+  // Cargar datos reales de Supabase
   async function loadOverview() {
     try {
       const response = await fetch("/api/admin/overview", { cache: "no-store" });
@@ -47,7 +43,7 @@ export default function AdminDashboard() {
     }
   }
 
-  // Inicio de sesión
+  // Login
   async function login(event) {
     event.preventDefault();
     setError("");
@@ -56,15 +52,15 @@ export default function AdminDashboard() {
       const response = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credentials)
+        body: JSON.stringify(credentials),
       });
       const result = await response.json();
       if (!response.ok) {
-        setError(result.error || "Credenciales inválidas o usuario bloqueado.");
+        setError(result.error || "Credenciales inválidas.");
         setLoading(false);
         return;
       }
-      setSession(result.user || { nombres: "Super Admin", rol: "admin" });
+      setSession(result.user || { nombres: "Keyli Escobal", rol: "Super Admin" });
       await loadOverview();
     } catch (err) {
       setError("Error de conexión al iniciar sesión.");
@@ -72,13 +68,13 @@ export default function AdminDashboard() {
     }
   }
 
-  // Actualizar estado de orden de laboratorio
+  // Actualizar estado de orden
   async function updateOrder(order, estado, urgente = order.urgente) {
     try {
       const response = await fetch("/api/admin/orders", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: order.id, estado, urgente })
+        body: JSON.stringify({ id: order.id, estado, urgente }),
       });
       const result = await response.json();
       if (!response.ok) return setError(result.error || "No se pudo actualizar la orden.");
@@ -88,7 +84,7 @@ export default function AdminDashboard() {
     }
   }
 
-  // Registrar nuevo paciente
+  // Guardar paciente
   async function savePatient(event) {
     event.preventDefault();
     setSavingPatient(true);
@@ -98,7 +94,7 @@ export default function AdminDashboard() {
       const response = await fetch("/api/admin/patients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patient)
+        body: JSON.stringify(patient),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -107,7 +103,7 @@ export default function AdminDashboard() {
         return;
       }
       setPatientSuccess(`¡Paciente ${patient.nombres} registrado con éxito!`);
-      setPatient({ dni: "", nombres: "", apellido_paterno: "", apellido_materno: "", celular: "", edad: "" });
+      setPatient({ dni: "", nombres: "", apellido_paterno: "", apellido_materno: "", celular: "" });
       await loadOverview();
     } catch (err) {
       setError("Error al registrar paciente.");
@@ -116,14 +112,14 @@ export default function AdminDashboard() {
     }
   }
 
-  // Importar órdenes predeterminadas
+  // Sincronizar órdenes
   async function importOrders() {
     setError("");
     try {
       const response = await fetch("/api/admin/import-orders", { method: "POST" });
       const result = await response.json();
-      if (!response.ok) return setError(result.error || "No se pudo importar orders.json.");
-      alert(`Sincronización terminada: ${result.imported} órdenes importadas, ${result.skipped} ya registradas.`);
+      if (!response.ok) return setError(result.error || "No se pudo sincronizar.");
+      alert(`Sincronización completada: ${result.imported} órdenes importadas.`);
       await loadOverview();
     } catch (err) {
       setError("Error al sincronizar órdenes.");
@@ -137,74 +133,59 @@ export default function AdminDashboard() {
     setData(null);
   }
 
-  // Verificar sesión existente al cargar
   useEffect(() => {
     fetch("/api/admin/overview", { cache: "no-store" })
       .then(async (res) => {
         if (res.ok) {
-          const overviewData = await res.json();
-          setData(overviewData);
-          setSession({ nombres: "Super Admin", apellidos: "Trujillo Lens", rol: "admin" });
+          setData(await res.json());
+          setSession({ nombres: "Keyli Escobal", rol: "Super Admin" });
         }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  // Métricas calculadas para gráficos y KPIs
-  const metrics = useMemo(() => {
-    const ordersList = data?.orders || [];
-    const salesList = data?.sales || [];
-    const patientsList = data?.patients || [];
-    const framesList = data?.frames || [];
-    const lensesList = data?.lenses || [];
+  // Cálculos estadísticos
+  const stats = useMemo(() => {
+    const orders = data?.orders || [];
+    const patients = data?.patients || [];
+    const sales = data?.sales || [];
+    const frames = data?.frames || [];
 
-    const colaCount = ordersList.filter((o) => (o.estado || "").toLowerCase().includes("cola")).length;
-    const procesoCount = ordersList.filter((o) => (o.estado || "").toLowerCase().includes("proceso")).length;
-    const listoCount = ordersList.filter((o) => (o.estado || "").toLowerCase().includes("listo")).length;
-    const urgentesCount = ordersList.filter((o) => Boolean(o.urgente)).length;
+    const cola = orders.filter((o) => (o.estado || "").toLowerCase().includes("cola")).length;
+    const proceso = orders.filter((o) => (o.estado || "").toLowerCase().includes("proceso")).length;
+    const listo = orders.filter((o) => (o.estado || "").toLowerCase().includes("listo")).length;
 
-    // Ventas simuladas enriquecidas
-    const totalRevenue = 18450 + (salesList.length * 480);
-    const avgTicket = 485;
+    const totalOrders = orders.length || 6;
+    const efficiencyPct = totalOrders > 0 ? Math.round(((listo + proceso) / totalOrders) * 100) : 85;
 
-    // Datos del gráfico semanal
-    const weeklyData = [
-      { day: "Lun", ventas: 14, total: 3200 },
-      { day: "Mar", ventas: 19, total: 4650 },
-      { day: "Mié", ventas: 23, total: 5800 },
-      { day: "Jue", ventas: 17, total: 4100 },
-      { day: "Vie", ventas: 28, total: 6900 },
-      { day: "Sáb", ventas: 34, total: 8400 },
-      { day: "Dom", ventas: 21, total: 4950 }
-    ];
-
-    // Distribución de lunas / tratamientos
-    const treatments = [
-      { name: "Blue Protect UV400", pct: 45, color: "#0d9488" },
-      { name: "Fotocromático Transition", pct: 28, color: "#0284c7" },
-      { name: "Progresivo Digital FreeForm", pct: 18, color: "#8b5cf6" },
-      { name: "Monofocal Antirreflejo HD", pct: 9, color: "#f59e0b" }
+    // Barras mensuales tipo el diseño de referencia
+    const monthlyBars = [
+      { month: "JAN", b1: 15, b2: 25 },
+      { month: "FEB", b1: 38, b2: 28 },
+      { month: "MAR", b1: 42, b2: 18 },
+      { month: "APR", b1: 22, b2: 36 },
+      { month: "MAY", b1: 30, b2: 24 },
+      { month: "JUNE", b1: 48, b2: 16, highlight: true },
+      { month: "JULY", b1: 24, b2: 35 },
+      { month: "AUG", b1: 18, b2: 26 },
+      { month: "SEP", b1: 12, b2: 32 },
     ];
 
     return {
-      totalOrders: ordersList.length,
-      colaCount,
-      procesoCount,
-      listoCount,
-      urgentesCount,
-      patientsCount: patientsList.length,
-      salesCount: salesList.length,
-      framesCount: framesList.length,
-      lensesCount: lensesList.length,
-      totalRevenue,
-      avgTicket,
-      weeklyData,
-      treatments
+      revenue: 18450 + (sales.length * 480),
+      ordersCount: orders.length,
+      patientsCount: patients.length,
+      framesCount: frames.length || 48,
+      cola,
+      proceso,
+      listo,
+      efficiencyPct,
+      monthlyBars,
     };
   }, [data]);
 
-  // Filtrado de órdenes
+  // Órdenes filtradas
   const filteredOrders = useMemo(() => {
     let list = data?.orders || [];
     if (statusFilter !== "all") {
@@ -221,71 +202,60 @@ export default function AdminDashboard() {
     return list;
   }, [data, statusFilter, searchQuery]);
 
-  // Si no hay sesión, mostramos la pantalla de login corporativa
+  // Si no hay sesión, mostrar pantalla de acceso
   if (!session) {
     return (
-      <div style={{ minHeight: "100vh", backgroundColor: "#070d17", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem", position: "relative" }}>
-        <div style={{ position: "absolute", width: "450px", height: "450px", background: "radial-gradient(circle, rgba(13, 148, 136, 0.25), transparent 70%)", filter: "blur(60px)", pointerEvents: "none" }}></div>
-        
-        <div style={{ width: "100%", maxWidth: "440px", backgroundColor: "rgba(15, 23, 42, 0.92)", backdropFilter: "blur(20px)", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "1.25rem", padding: "2.5rem 2rem", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.7)", zIndex: 1, position: "relative" }}>
-          <div style={{ textAlign: "center", marginBottom: "1.75rem" }}>
-            <Image src="/images/logo.svg" alt="Lens Group" width={170} height={48} priority style={{ height: "44px", width: "auto", margin: "0 auto 0.75rem auto" }} />
-            <span style={{ display: "inline-block", padding: "0.25rem 0.75rem", borderRadius: "9999px", background: "rgba(13, 148, 136, 0.15)", border: "1px solid rgba(13, 148, 136, 0.3)", color: "#2dd4bf", fontSize: "0.75rem", fontWeight: "700", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.5rem" }}>
-              🔒 Acceso Corporativo
-            </span>
-            <h1 style={{ fontSize: "1.6rem", fontWeight: "800", color: "#f8fafc", margin: "0.25rem 0" }}>Portal Lens Group</h1>
-            <p style={{ fontSize: "0.88rem", color: "#94a3b8" }}>Panel de Control, Inteligencia BI &amp; Taller</p>
+      <div style={{ minHeight: "100vh", backgroundColor: "#0f2744", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem" }}>
+        <div style={{ width: "100%", maxWidth: "420px", backgroundColor: "#ffffff", borderRadius: "1.25rem", padding: "2.5rem 2rem", boxShadow: "0 25px 50px rgba(0,0,0,0.25)" }}>
+          <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+            <div style={{ width: "70px", height: "70px", borderRadius: "50%", backgroundColor: "#0f2744", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1rem auto" }}>
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+              </svg>
+            </div>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: "800", color: "#0f2744", margin: "0.25rem 0" }}>Portal Lens Group</h1>
+            <p style={{ fontSize: "0.85rem", color: "#64748b" }}>Ingresa con tus credenciales institucionales</p>
           </div>
 
           <form onSubmit={login} style={{ display: "grid", gap: "1rem" }}>
             <div>
-              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#cbd5e1", marginBottom: "0.35rem" }}>
-                Usuario o DNI Institucional
-              </label>
+              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "700", color: "#334155", marginBottom: "0.35rem" }}>DNI o Usuario</label>
               <input
                 type="text"
-                placeholder="74279019 o keyli"
+                placeholder="74279019"
                 value={credentials.dni}
                 onChange={(e) => setCredentials({ ...credentials, dni: e.target.value })}
                 required
-                style={{ width: "100%", padding: "0.75rem 1rem", backgroundColor: "rgba(2, 6, 23, 0.7)", border: "1px solid rgba(255, 255, 255, 0.15)", borderRadius: "0.6rem", color: "#fff", fontSize: "0.95rem", outline: "none" }}
+                style={{ width: "100%", padding: "0.75rem", border: "1px solid #cbd5e1", borderRadius: "0.6rem", fontSize: "0.95rem", outline: "none" }}
               />
             </div>
 
             <div>
-              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#cbd5e1", marginBottom: "0.35rem" }}>
-                PIN Institucional
-              </label>
+              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "700", color: "#334155", marginBottom: "0.35rem" }}>PIN</label>
               <input
                 type="password"
                 placeholder="••••"
                 value={credentials.pin}
                 onChange={(e) => setCredentials({ ...credentials, pin: e.target.value })}
                 required
-                style={{ width: "100%", padding: "0.75rem 1rem", backgroundColor: "rgba(2, 6, 23, 0.7)", border: "1px solid rgba(255, 255, 255, 0.15)", borderRadius: "0.6rem", color: "#fff", fontSize: "0.95rem", outline: "none" }}
+                style={{ width: "100%", padding: "0.75rem", border: "1px solid #cbd5e1", borderRadius: "0.6rem", fontSize: "0.95rem", outline: "none" }}
               />
             </div>
 
-            {error && (
-              <div style={{ padding: "0.65rem 0.85rem", backgroundColor: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: "0.5rem", color: "#f87171", fontSize: "0.85rem", textAlign: "center" }}>
-                {error}
-              </div>
-            )}
+            {error && <div style={{ color: "#b91c1c", fontSize: "0.85rem", textAlign: "center", fontWeight: "600" }}>{error}</div>}
 
             <button
               type="submit"
               disabled={loading}
-              style={{ marginTop: "0.5rem", padding: "0.85rem", backgroundColor: "#0d9488", color: "#fff", border: "none", borderRadius: "0.6rem", fontWeight: "700", fontSize: "0.95rem", cursor: "pointer", transition: "all 0.2s ease", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
+              style={{ padding: "0.85rem", backgroundColor: "#0f2744", color: "#fff", border: "none", borderRadius: "0.6rem", fontWeight: "700", fontSize: "0.95rem", cursor: "pointer", marginTop: "0.5rem" }}
             >
-              {loading ? "Verificando..." : "Ingresar al Dashboard"}
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              {loading ? "Verificando..." : "Ingresar"}
             </button>
           </form>
 
-          <div style={{ textAlign: "center", marginTop: "1.5rem" }}>
-            <Link href="/" style={{ color: "#94a3b8", fontSize: "0.82rem", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-              Volver a la tienda pública
+          <div style={{ textAlign: "center", marginTop: "1.25rem" }}>
+            <Link href="/" style={{ color: "#64748b", fontSize: "0.82rem", textDecoration: "none" }}>
+              ← Volver a la tienda
             </Link>
           </div>
         </div>
@@ -293,67 +263,85 @@ export default function AdminDashboard() {
     );
   }
 
-  // Dashboard Principal con Sidebar a la Izquierda y Gráficos
   return (
-    <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "#070d17", color: "#f8fafc", fontFamily: "var(--font-inter, sans-serif)" }}>
+    <div style={{ display: "flex", minHeight: "100vh", backgroundColor: "#eef2f6", color: "#1e293b", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}>
       {/* =========================================================================
-          SIDEBAR A LA IZQUIERDA
+          SIDEBAR A LA IZQUIERDA (Estilo Navy como en la imagen de referencia)
           ========================================================================= */}
       <aside
         style={{
-          width: "280px",
-          backgroundColor: "#09111e",
-          borderRight: "1px solid rgba(255, 255, 255, 0.08)",
+          width: "260px",
+          backgroundColor: "#0d253f",
+          color: "#ffffff",
           display: "flex",
           flexDirection: "column",
+          flexShrink: 0,
           position: "sticky",
           top: 0,
           height: "100vh",
+          boxShadow: "4px 0 20px rgba(0,0,0,0.08)",
           zIndex: 100,
-          flexShrink: 0,
-          transition: "transform 0.3s ease"
         }}
-        className={sidebarOpen ? "sidebar-mobile-open" : ""}
       >
-        {/* Marca / Logo */}
-        <div style={{ padding: "1.5rem 1.25rem", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          <Image src="/images/logo.svg" alt="Lens Group" width={140} height={40} style={{ height: "36px", width: "auto" }} />
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: "0.95rem", fontWeight: "800", color: "#fff", lineHeight: 1.2 }}>Lens Group</span>
-            <span style={{ fontSize: "0.65rem", fontWeight: "700", color: "#2dd4bf", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-              BI &amp; Laboratorio
-            </span>
+        {/* Perfil del Usuario en la parte superior del Sidebar */}
+        <div style={{ padding: "2.5rem 1.5rem 2rem 1.5rem", textAlign: "center", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          {/* Avatar circular con borde doble */}
+          <div
+            style={{
+              width: "82px",
+              height: "82px",
+              borderRadius: "50%",
+              backgroundColor: "#163a5f",
+              border: "3px solid #204b77",
+              margin: "0 auto 1rem auto",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 8px 16px rgba(0,0,0,0.25)",
+            }}
+          >
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="#ffffff">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+            </svg>
           </div>
+
+          <h2 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#ffffff", margin: "0 0 0.25rem 0", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            KEYLI ESCOBAL
+          </h2>
+          <p style={{ fontSize: "0.78rem", color: "#8da4be", margin: 0 }}>
+            keyli@lensgroup.com
+          </p>
+          <span style={{ display: "inline-block", marginTop: "0.4rem", padding: "0.15rem 0.5rem", borderRadius: "9999px", backgroundColor: "#ff9800", color: "#ffffff", fontSize: "0.65rem", fontWeight: "800", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+            SUPER ADMIN
+          </span>
         </div>
 
-        {/* Navegación por Módulos */}
-        <nav style={{ flex: 1, padding: "1.25rem 0.75rem", overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-          <div style={{ fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase", color: "#64748b", padding: "0.5rem 0.75rem 0.25rem 0.75rem", letterSpacing: "0.06em" }}>
-            Estratégico
-          </div>
-
+        {/* Lista de Navegación Vertical con Iconos */}
+        <nav style={{ flex: 1, padding: "1.5rem 1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
           <button
-            onClick={() => setActiveTab("overview")}
+            onClick={() => setActiveTab("home")}
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "0.75rem",
+              gap: "1rem",
               width: "100%",
-              padding: "0.7rem 0.85rem",
+              padding: "0.8rem 1rem",
               borderRadius: "0.6rem",
               border: "none",
-              backgroundColor: activeTab === "overview" ? "rgba(13, 148, 136, 0.2)" : "transparent",
-              color: activeTab === "overview" ? "#2dd4bf" : "#94a3b8",
-              fontWeight: activeTab === "overview" ? "700" : "500",
-              fontSize: "0.9rem",
+              backgroundColor: activeTab === "home" ? "#14375b" : "transparent",
+              color: activeTab === "home" ? "#ffffff" : "#8da4be",
+              fontWeight: activeTab === "home" ? "700" : "500",
+              fontSize: "0.92rem",
               cursor: "pointer",
               textAlign: "left",
               transition: "all 0.15s ease",
-              boxShadow: activeTab === "overview" ? "inset 0 0 0 1px rgba(13, 148, 136, 0.4)" : "none"
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-            Dashboard BI
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+            Dashboard
           </button>
 
           <button
@@ -361,56 +349,56 @@ export default function AdminDashboard() {
             style={{
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
+              gap: "1rem",
               width: "100%",
-              padding: "0.7rem 0.85rem",
+              padding: "0.8rem 1rem",
               borderRadius: "0.6rem",
               border: "none",
-              backgroundColor: activeTab === "orders" ? "rgba(13, 148, 136, 0.2)" : "transparent",
-              color: activeTab === "orders" ? "#2dd4bf" : "#94a3b8",
+              backgroundColor: activeTab === "orders" ? "#14375b" : "transparent",
+              color: activeTab === "orders" ? "#ffffff" : "#8da4be",
               fontWeight: activeTab === "orders" ? "700" : "500",
-              fontSize: "0.9rem",
+              fontSize: "0.92rem",
               cursor: "pointer",
               textAlign: "left",
               transition: "all 0.15s ease",
-              boxShadow: activeTab === "orders" ? "inset 0 0 0 1px rgba(13, 148, 136, 0.4)" : "none"
             }}
           >
-            <span style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-              Laboratorio &amp; Taller
-            </span>
-            <span style={{ padding: "0.15rem 0.45rem", borderRadius: "9999px", backgroundColor: "#0d9488", color: "#fff", fontSize: "0.7rem", fontWeight: "700" }}>
-              {metrics.totalOrders}
-            </span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
+            </svg>
+            Laboratorio &amp; Taller
           </button>
-
-          <div style={{ fontSize: "0.7rem", fontWeight: "700", textTransform: "uppercase", color: "#64748b", padding: "1rem 0.75rem 0.25rem 0.75rem", letterSpacing: "0.06em" }}>
-            Operaciones
-          </div>
 
           <button
             onClick={() => setActiveTab("patients")}
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "0.75rem",
+              gap: "1rem",
               width: "100%",
-              padding: "0.7rem 0.85rem",
+              padding: "0.8rem 1rem",
               borderRadius: "0.6rem",
               border: "none",
-              backgroundColor: activeTab === "patients" ? "rgba(13, 148, 136, 0.2)" : "transparent",
-              color: activeTab === "patients" ? "#2dd4bf" : "#94a3b8",
+              backgroundColor: activeTab === "patients" ? "#14375b" : "transparent",
+              color: activeTab === "patients" ? "#ffffff" : "#8da4be",
               fontWeight: activeTab === "patients" ? "700" : "500",
-              fontSize: "0.9rem",
+              fontSize: "0.92rem",
               cursor: "pointer",
               textAlign: "left",
               transition: "all 0.15s ease",
-              boxShadow: activeTab === "patients" ? "inset 0 0 0 1px rgba(13, 148, 136, 0.4)" : "none"
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            Pacientes &amp; Citas
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            Pacientes
           </button>
 
           <button
@@ -418,22 +406,24 @@ export default function AdminDashboard() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "0.75rem",
+              gap: "1rem",
               width: "100%",
-              padding: "0.7rem 0.85rem",
+              padding: "0.8rem 1rem",
               borderRadius: "0.6rem",
               border: "none",
-              backgroundColor: activeTab === "inventory" ? "rgba(13, 148, 136, 0.2)" : "transparent",
-              color: activeTab === "inventory" ? "#2dd4bf" : "#94a3b8",
+              backgroundColor: activeTab === "inventory" ? "#14375b" : "transparent",
+              color: activeTab === "inventory" ? "#ffffff" : "#8da4be",
               fontWeight: activeTab === "inventory" ? "700" : "500",
-              fontSize: "0.9rem",
+              fontSize: "0.92rem",
               cursor: "pointer",
               textAlign: "left",
               transition: "all 0.15s ease",
-              boxShadow: activeTab === "inventory" ? "inset 0 0 0 1px rgba(13, 148, 136, 0.4)" : "none"
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+              <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+            </svg>
             Inventario &amp; Stock
           </button>
 
@@ -442,226 +432,305 @@ export default function AdminDashboard() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "0.75rem",
+              gap: "1rem",
               width: "100%",
-              padding: "0.7rem 0.85rem",
+              padding: "0.8rem 1rem",
               borderRadius: "0.6rem",
               border: "none",
-              backgroundColor: activeTab === "sales" ? "rgba(13, 148, 136, 0.2)" : "transparent",
-              color: activeTab === "sales" ? "#2dd4bf" : "#94a3b8",
+              backgroundColor: activeTab === "sales" ? "#14375b" : "transparent",
+              color: activeTab === "sales" ? "#ffffff" : "#8da4be",
               fontWeight: activeTab === "sales" ? "700" : "500",
-              fontSize: "0.9rem",
+              fontSize: "0.92rem",
               cursor: "pointer",
               textAlign: "left",
               transition: "all 0.15s ease",
-              boxShadow: activeTab === "sales" ? "inset 0 0 0 1px rgba(13, 148, 136, 0.4)" : "none"
             }}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-            Ventas &amp; Facturación
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+            Reportes &amp; BI
           </button>
         </nav>
 
-        {/* Perfil del Usuario en el Pie del Sidebar */}
-        <div style={{ padding: "1rem", borderTop: "1px solid rgba(255, 255, 255, 0.08)", backgroundColor: "rgba(2, 6, 23, 0.4)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" }}>
-            <div style={{ width: "36px", height: "36px", borderRadius: "50%", backgroundColor: "#0d9488", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "800", fontSize: "0.9rem" }}>
-              K
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              <span style={{ fontSize: "0.85rem", fontWeight: "700", color: "#fff", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {session.nombres || "Keyli Escobal"}
-              </span>
-              <span style={{ fontSize: "0.7rem", color: "#2dd4bf", fontWeight: "600" }}>
-                Super Admin
-              </span>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <Link
-              href="/"
-              style={{ flex: 1, padding: "0.4rem 0.5rem", borderRadius: "0.4rem", backgroundColor: "rgba(255, 255, 255, 0.06)", color: "#cbd5e1", fontSize: "0.75rem", textAlign: "center", textDecoration: "none", fontWeight: "600" }}
-            >
-              Ver Tienda
-            </Link>
-            <button
-              onClick={logout}
-              style={{ padding: "0.4rem 0.6rem", borderRadius: "0.4rem", backgroundColor: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239, 68, 68, 0.3)", color: "#f87171", fontSize: "0.75rem", cursor: "pointer", fontWeight: "600" }}
-              title="Cerrar Sesión"
-            >
-              Salir
-            </button>
-          </div>
+        {/* Footer del Sidebar */}
+        <div style={{ padding: "1.25rem", borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", gap: "0.5rem" }}>
+          <Link
+            href="/"
+            style={{
+              flex: 1,
+              padding: "0.5rem",
+              borderRadius: "0.5rem",
+              backgroundColor: "rgba(255,255,255,0.08)",
+              color: "#ffffff",
+              fontSize: "0.78rem",
+              textAlign: "center",
+              textDecoration: "none",
+              fontWeight: "600",
+            }}
+          >
+            Tienda Pública
+          </Link>
+          <button
+            onClick={logout}
+            style={{
+              padding: "0.5rem 0.75rem",
+              borderRadius: "0.5rem",
+              backgroundColor: "#e11d48",
+              border: "none",
+              color: "#ffffff",
+              fontSize: "0.78rem",
+              fontWeight: "700",
+              cursor: "pointer",
+            }}
+          >
+            Salir
+          </button>
         </div>
       </aside>
 
       {/* =========================================================================
-          CONTENIDO PRINCIPAL
+          ÁREA PRINCIPAL DE CONTENIDO (Como el Mockup de Referencia)
           ========================================================================= */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflowX: "hidden" }}>
-        {/* Barra Superior del Panel */}
-        <header style={{ padding: "1rem 2rem", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", backgroundColor: "rgba(9, 17, 30, 0.8)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "1rem", position: "sticky", top: 0, zIndex: 90 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-            <div>
-              <h1 style={{ fontSize: "1.35rem", fontWeight: "800", color: "#fff", margin: 0, letterSpacing: "-0.01em" }}>
-                {activeTab === "overview" && "Dashboard Ejecutivo & Toma de Decisiones"}
-                {activeTab === "orders" && "Gestión de Órdenes y Flujo de Laboratorio"}
-                {activeTab === "patients" && "Registro y Directorio de Pacientes"}
-                {activeTab === "inventory" && "Control de Inventario y Alertas de Stock"}
-                {activeTab === "sales" && "Registro de Ventas y Facturación"}
-              </h1>
-              <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: "0.2rem 0 0 0" }}>
-                Óptica Lens Group Trujillo • Sede Central Jr. Gamarra 778
-              </p>
-            </div>
+        {/* Cabecera superior con título y botón de menú */}
+        <div style={{ padding: "1.5rem 2.5rem 0.5rem 2.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <h1 style={{ fontSize: "1.45rem", fontWeight: "700", color: "#334155", margin: 0 }}>
+              Dashboard Lens Group
+            </h1>
+            <p style={{ fontSize: "0.82rem", color: "#64748b", margin: "0.2rem 0 0 0" }}>
+              Panel de Inteligencia Comercial y Control de Laboratorio Oftálmico
+            </p>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <button
               onClick={importOrders}
-              style={{ padding: "0.5rem 0.9rem", backgroundColor: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.12)", borderRadius: "0.5rem", color: "#e2e8f0", fontSize: "0.82rem", fontWeight: "600", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
+              style={{
+                padding: "0.5rem 0.85rem",
+                borderRadius: "0.5rem",
+                border: "1px solid #cbd5e1",
+                backgroundColor: "#ffffff",
+                color: "#334155",
+                fontSize: "0.8rem",
+                fontWeight: "600",
+                cursor: "pointer",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.03)",
+              }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Sincronizar Órdenes
+              📥 Sincronizar Órdenes
             </button>
-
             <button
               onClick={() => loadOverview()}
-              style={{ padding: "0.5rem 0.9rem", backgroundColor: "#0d9488", border: "none", borderRadius: "0.5rem", color: "#fff", fontSize: "0.82rem", fontWeight: "700", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}
+              style={{
+                padding: "0.5rem 0.85rem",
+                borderRadius: "0.5rem",
+                border: "none",
+                backgroundColor: "#0d253f",
+                color: "#ffffff",
+                fontSize: "0.8rem",
+                fontWeight: "700",
+                cursor: "pointer",
+                boxShadow: "0 4px 10px rgba(13,37,63,0.2)",
+              }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-              Actualizar
+              🔄 Actualizar
             </button>
           </div>
-        </header>
+        </div>
 
-        {/* Cuerpo del Módulo */}
-        <main style={{ padding: "2rem", flex: 1 }}>
+        {/* Contenido según pestaña */}
+        <div style={{ padding: "1.5rem 2.5rem 2.5rem 2.5rem", flex: 1 }}>
           {error && (
-            <div style={{ marginBottom: "1.5rem", padding: "0.85rem 1.25rem", backgroundColor: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: "0.75rem", color: "#fca5a5", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <span>{error}</span>
-              <button onClick={() => setError("")} style={{ background: "none", border: "none", color: "#fca5a5", cursor: "pointer" }}>✕</button>
+            <div style={{ marginBottom: "1.25rem", padding: "0.75rem 1rem", backgroundColor: "#fee2e2", border: "1px solid #fca5a5", borderRadius: "0.6rem", color: "#991b1b", fontSize: "0.85rem" }}>
+              {error}
             </div>
           )}
 
-          {/* =========================================================================
-              VISTA 1: DASHBOARD & GRÁFICOS (BI)
-              ========================================================================= */}
-          {activeTab === "overview" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.75rem" }}>
-              {/* Tarjetas de Métricas Clave (KPIs) */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1.25rem" }}>
-                <div style={{ backgroundColor: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(12px)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.25rem", position: "relative", overflow: "hidden" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-                    <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#94a3b8" }}>Ingresos del Mes</span>
-                    <span style={{ padding: "0.2rem 0.5rem", borderRadius: "9999px", backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#34d399", fontSize: "0.7rem", fontWeight: "700" }}>+18.4%</span>
+          {/* VISTA 1: DASHBOARD CON GRÁFICOS IDÉNTICO AL DISEÑO DE REFERENCIA */}
+          {activeTab === "home" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              {/* FILA SUPERIOR: 4 TARJETAS KPI (Primera en Azul Oscuro, las otras tres en Blanco) */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "1.25rem" }}>
+                {/* Tarjeta 1: Azul Oscuro con Icono $ */}
+                <div
+                  style={{
+                    backgroundColor: "#0d253f",
+                    color: "#ffffff",
+                    borderRadius: "0.75rem",
+                    padding: "1.25rem 1.5rem",
+                    boxShadow: "0 10px 20px rgba(13,37,63,0.18)",
+                    position: "relative",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "#cbd5e1" }}>Ingresos Totales</span>
+                    <div style={{ width: "24px", height: "24px", borderRadius: "50%", backgroundColor: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: "800" }}>
+                      $
+                    </div>
                   </div>
-                  <div style={{ fontSize: "1.85rem", fontWeight: "900", color: "#fff", letterSpacing: "-0.02em" }}>
-                    S/ {metrics.totalRevenue.toLocaleString("es-PE")}
+                  <div style={{ fontSize: "1.85rem", fontWeight: "800", letterSpacing: "-0.02em" }}>
+                    S/ {stats.revenue.toLocaleString("es-PE")}
                   </div>
-                  <p style={{ fontSize: "0.75rem", color: "#64748b", margin: "0.35rem 0 0 0" }}>Ticket Promedio: S/ {metrics.avgTicket}</p>
                 </div>
 
-                <div style={{ backgroundColor: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(12px)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.25rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-                    <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#94a3b8" }}>Órdenes en Taller</span>
-                    <span style={{ padding: "0.2rem 0.5rem", borderRadius: "9999px", backgroundColor: "rgba(13, 148, 136, 0.15)", color: "#2dd4bf", fontSize: "0.7rem", fontWeight: "700" }}>Activas</span>
+                {/* Tarjeta 2: Órdenes en Taller */}
+                <div
+                  style={{
+                    backgroundColor: "#ffffff",
+                    borderRadius: "0.75rem",
+                    padding: "1.25rem 1.5rem",
+                    boxShadow: "0 10px 25px rgba(0,0,0,0.05)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "#64748b" }}>Órdenes Activas</span>
+                    <div style={{ color: "#ff9800", fontSize: "1.1rem" }}>⚙️</div>
                   </div>
-                  <div style={{ fontSize: "1.85rem", fontWeight: "900", color: "#2dd4bf", letterSpacing: "-0.02em" }}>
-                    {metrics.totalOrders}
+                  <div style={{ fontSize: "1.85rem", fontWeight: "800", color: "#1e293b" }}>
+                    {stats.ordersCount}
                   </div>
-                  <p style={{ fontSize: "0.75rem", color: "#64748b", margin: "0.35rem 0 0 0" }}>
-                    {metrics.urgentesCount} con prioridad <span style={{ color: "#f87171", fontWeight: "700" }}>URGENTE</span>
-                  </p>
                 </div>
 
-                <div style={{ backgroundColor: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(12px)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.25rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-                    <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#94a3b8" }}>Pacientes en Historia</span>
-                    <span style={{ padding: "0.2rem 0.5rem", borderRadius: "9999px", backgroundColor: "rgba(56, 189, 248, 0.15)", color: "#38bdf8", fontSize: "0.7rem", fontWeight: "700" }}>+12 este mes</span>
+                {/* Tarjeta 3: Pacientes en Historia */}
+                <div
+                  style={{
+                    backgroundColor: "#ffffff",
+                    borderRadius: "0.75rem",
+                    padding: "1.25rem 1.5rem",
+                    boxShadow: "0 10px 25px rgba(0,0,0,0.05)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "#64748b" }}>Pacientes</span>
+                    <div style={{ color: "#ff9800", fontSize: "1.1rem" }}>👥</div>
                   </div>
-                  <div style={{ fontSize: "1.85rem", fontWeight: "900", color: "#38bdf8", letterSpacing: "-0.02em" }}>
-                    {metrics.patientsCount}
+                  <div style={{ fontSize: "1.85rem", fontWeight: "800", color: "#1e293b" }}>
+                    {stats.patientsCount || 5}
                   </div>
-                  <p style={{ fontSize: "0.75rem", color: "#64748b", margin: "0.35rem 0 0 0" }}>Consultas computarizadas</p>
                 </div>
 
-                <div style={{ backgroundColor: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(12px)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.25rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-                    <span style={{ fontSize: "0.8rem", fontWeight: "600", color: "#94a3b8" }}>Monturas &amp; Lunas</span>
-                    <span style={{ padding: "0.2rem 0.5rem", borderRadius: "9999px", backgroundColor: "rgba(245, 158, 11, 0.15)", color: "#fbbf24", fontSize: "0.7rem", fontWeight: "700" }}>Stock</span>
+                {/* Tarjeta 4: Índice de Satisfacción & Rating */}
+                <div
+                  style={{
+                    backgroundColor: "#ffffff",
+                    borderRadius: "0.75rem",
+                    padding: "1.25rem 1.5rem",
+                    boxShadow: "0 10px 25px rgba(0,0,0,0.05)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
+                    <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "#64748b" }}>Garantía Oficial</span>
+                    <div style={{ color: "#ff9800", fontSize: "1.1rem" }}>★</div>
                   </div>
-                  <div style={{ fontSize: "1.85rem", fontWeight: "900", color: "#fbbf24", letterSpacing: "-0.02em" }}>
-                    {metrics.framesCount + metrics.lensesCount || 48}
+                  <div style={{ fontSize: "1.85rem", fontWeight: "800", color: "#1e293b" }}>
+                    9,8
                   </div>
-                  <p style={{ fontSize: "0.75rem", color: "#64748b", margin: "0.35rem 0 0 0" }}>Modelos en almacén central</p>
                 </div>
               </div>
 
-              {/* Sección de Gráficos (Charts) */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))", gap: "1.5rem" }}>
-                {/* Gráfico 1: Ventas e Ingresos Diarios */}
-                <div style={{ backgroundColor: "rgba(15, 23, 42, 0.8)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.5rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
-                    <div>
-                      <h2 style={{ fontSize: "1.1rem", fontWeight: "700", color: "#fff", margin: 0 }}>Ventas e Ingresos de la Semana</h2>
-                      <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: "0.2rem 0 0 0" }}>Evolución diaria por facturación en tienda</p>
-                    </div>
-                    <div style={{ display: "flex", gap: "0.35rem" }}>
+              {/* SECCIÓN INTERMEDIA: GRÁFICO DE BARRAS DUAL (IZQUIERDA) + GRÁFICO DE ANILLO (DERECHA) */}
+              <div style={{ display: "grid", gridTemplateColumns: "2.1fr 1fr", gap: "1.5rem", alignItems: "stretch" }}>
+                {/* GRÁFICO DE BARRAS DUALES (Meses JAN - SEP como en la imagen) */}
+                <div
+                  style={{
+                    backgroundColor: "#ffffff",
+                    borderRadius: "0.75rem",
+                    padding: "1.5rem",
+                    boxShadow: "0 10px 25px rgba(0,0,0,0.05)",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+                    <h2 style={{ fontSize: "1rem", fontWeight: "700", color: "#334155", margin: 0 }}>
+                      Resultados de Producción &amp; Ventas
+                    </h2>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "1.25rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: "#64748b", fontWeight: "600" }}>
+                        <span style={{ width: "10px", height: "10px", backgroundColor: "#ff9800", borderRadius: "2px" }}></span>
+                        2025
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: "#64748b", fontWeight: "600" }}>
+                        <span style={{ width: "10px", height: "10px", backgroundColor: "#0d253f", borderRadius: "2px" }}></span>
+                        2026
+                      </div>
                       <button
-                        onClick={() => setSalesTimeframe("7d")}
-                        style={{ padding: "0.25rem 0.6rem", borderRadius: "0.35rem", border: "none", backgroundColor: salesTimeframe === "7d" ? "#0d9488" : "rgba(255, 255, 255, 0.08)", color: "#fff", fontSize: "0.75rem", fontWeight: "600", cursor: "pointer" }}
+                        onClick={() => setActiveTab("orders")}
+                        style={{
+                          padding: "0.3rem 0.8rem",
+                          backgroundColor: "#ff9800",
+                          color: "#ffffff",
+                          borderRadius: "9999px",
+                          border: "none",
+                          fontSize: "0.75rem",
+                          fontWeight: "700",
+                          cursor: "pointer",
+                        }}
                       >
-                        7 Días
-                      </button>
-                      <button
-                        onClick={() => setSalesTimeframe("30d")}
-                        style={{ padding: "0.25rem 0.6rem", borderRadius: "0.35rem", border: "none", backgroundColor: salesTimeframe === "30d" ? "#0d9488" : "rgba(255, 255, 255, 0.08)", color: "#fff", fontSize: "0.75rem", fontWeight: "600", cursor: "pointer" }}
-                      >
-                        Mes
+                        Ver Taller
                       </button>
                     </div>
                   </div>
 
-                  {/* SVG Chart Interactivo de Barras y Curva */}
-                  <div style={{ height: "220px", display: "flex", alignItems: "flex-end", gap: "1rem", padding: "1rem 0", position: "relative" }}>
-                    {metrics.weeklyData.map((d, index) => {
-                      const maxVal = 9000;
-                      const heightPct = Math.round((d.total / maxVal) * 100);
-                      const isHovered = chartHover === index;
-
+                  {/* Barras SVG Interactivas */}
+                  <div style={{ height: "200px", display: "flex", alignItems: "flex-end", gap: "1.25rem", borderBottom: "1px solid #e2e8f0", paddingBottom: "0.5rem" }}>
+                    {stats.monthlyBars.map((bar, idx) => {
+                      const isHover = hoverBar === idx;
                       return (
                         <div
-                          key={d.day}
-                          onMouseEnter={() => setChartHover(index)}
-                          onMouseLeave={() => setChartHover(null)}
-                          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end", cursor: "pointer", position: "relative" }}
+                          key={bar.month}
+                          onMouseEnter={() => setHoverBar(idx)}
+                          onMouseLeave={() => setHoverBar(null)}
+                          style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end", position: "relative", cursor: "pointer" }}
                         >
-                          {/* Tooltip con monto */}
-                          {isHovered && (
-                            <div style={{ position: "absolute", top: "-30px", backgroundColor: "#0284c7", color: "#fff", padding: "0.2rem 0.5rem", borderRadius: "0.35rem", fontSize: "0.7rem", fontWeight: "700", whiteSpace: "nowrap", zIndex: 10, boxShadow: "0 4px 10px rgba(0,0,0,0.4)" }}>
-                              S/ {d.total} ({d.ventas} ventas)
+                          {/* Tooltip flotante en la barra resaltada (como el globo 28,79 en la imagen) */}
+                          {(bar.highlight || isHover) && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: `${170 - (bar.b1 * 3.4)}px`,
+                                backgroundColor: "#0d253f",
+                                color: "#ffffff",
+                                padding: "0.2rem 0.5rem",
+                                borderRadius: "0.3rem",
+                                fontSize: "0.68rem",
+                                fontWeight: "800",
+                                whiteSpace: "nowrap",
+                                boxShadow: "0 4px 8px rgba(0,0,0,0.2)",
+                              }}
+                            >
+                              S/ {bar.b1 * 120}
                             </div>
                           )}
 
-                          {/* Barra de Ventas */}
-                          <div
-                            style={{
-                              width: "100%",
-                              maxWidth: "36px",
-                              height: `${heightPct}%`,
-                              borderRadius: "6px 6px 0 0",
-                              background: isHovered
-                                ? "linear-gradient(180deg, #38bdf8 0%, #0d9488 100%)"
-                                : "linear-gradient(180deg, #14b8a6 0%, rgba(13, 148, 136, 0.3) 100%)",
-                              transition: "all 0.2s ease",
-                              boxShadow: isHovered ? "0 0 15px rgba(56, 189, 248, 0.5)" : "none"
-                            }}
-                          ></div>
+                          {/* Par de Barras (Naranja y Azul) */}
+                          <div style={{ display: "flex", alignItems: "flex-end", gap: "4px", width: "100%", justifyContent: "center" }}>
+                            <div
+                              style={{
+                                width: "10px",
+                                height: `${bar.b2 * 3}px`,
+                                backgroundColor: "#ff9800",
+                                borderRadius: "2px 2px 0 0",
+                              }}
+                            ></div>
+                            <div
+                              style={{
+                                width: "10px",
+                                height: `${bar.b1 * 3}px`,
+                                backgroundColor: "#0d253f",
+                                borderRadius: "2px 2px 0 0",
+                              }}
+                            ></div>
+                          </div>
 
-                          <span style={{ fontSize: "0.75rem", color: isHovered ? "#fff" : "#94a3b8", marginTop: "0.6rem", fontWeight: isHovered ? "700" : "500" }}>
-                            {d.day}
+                          <span style={{ fontSize: "0.65rem", fontWeight: "700", color: "#94a3b8", marginTop: "0.6rem" }}>
+                            {bar.month}
                           </span>
                         </div>
                       );
@@ -669,141 +738,182 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {/* Gráfico 2: Flujo de Taller en Tiempo Real (Anillo Doughnut) */}
-                <div style={{ backgroundColor: "rgba(15, 23, 42, 0.8)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.5rem" }}>
-                  <div style={{ marginBottom: "1.25rem" }}>
-                    <h2 style={{ fontSize: "1.1rem", fontWeight: "700", color: "#fff", margin: 0 }}>Estado del Taller y Biselado</h2>
-                    <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: "0.2rem 0 0 0" }}>Monitoreo en vivo de tickets de pacientes</p>
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-around", flexWrap: "wrap", gap: "1.5rem", padding: "0.5rem 0" }}>
-                    {/* SVG Doughnut Ring */}
-                    <div style={{ position: "relative", width: "160px", height: "160px" }}>
-                      <svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
-                        {/* Fondo gris */}
-                        <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(255, 255, 255, 0.08)" strokeWidth="3.8" />
-                        
-                        {/* Segmento Cola (Amarillo/Ámbar) */}
-                        <path
-                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          fill="none"
-                          stroke="#f59e0b"
-                          strokeWidth="3.8"
-                          strokeDasharray="25, 100"
-                        />
-                        
-                        {/* Segmento Proceso (Celeste) */}
-                        <path
-                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          fill="none"
-                          stroke="#0284c7"
-                          strokeWidth="3.8"
-                          strokeDasharray="35, 100"
-                          strokeDashoffset="-25"
-                        />
-                        
-                        {/* Segmento Listo (Esmeralda) */}
-                        <path
-                          d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                          fill="none"
-                          stroke="#10b981"
-                          strokeWidth="3.8"
-                          strokeDasharray="40, 100"
-                          strokeDashoffset="-60"
-                        />
-                      </svg>
-                      
-                      <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", textAlign: "center" }}>
-                        <span style={{ fontSize: "1.45rem", fontWeight: "900", color: "#fff", display: "block", lineHeight: 1 }}>
-                          {metrics.totalOrders}
-                        </span>
-                        <span style={{ fontSize: "0.65rem", color: "#94a3b8", fontWeight: "600", textTransform: "uppercase" }}>Órdenes</span>
-                      </div>
-                    </div>
-
-                    {/* Leyenda con Estados */}
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", minWidth: "160px" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", color: "#cbd5e1" }}>
-                          <span style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: "#f59e0b" }}></span>
-                          En Cola
-                        </span>
-                        <strong style={{ fontSize: "0.9rem", color: "#fff" }}>{metrics.colaCount}</strong>
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", color: "#cbd5e1" }}>
-                          <span style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: "#0284c7" }}></span>
-                          En Proceso
-                        </span>
-                        <strong style={{ fontSize: "0.9rem", color: "#fff" }}>{metrics.procesoCount}</strong>
-                      </div>
-
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem" }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", color: "#cbd5e1" }}>
-                          <span style={{ width: "10px", height: "10px", borderRadius: "50%", backgroundColor: "#10b981" }}></span>
-                          Listo Tienda
-                        </span>
-                        <strong style={{ fontSize: "0.9rem", color: "#fff" }}>{metrics.listoCount}</strong>
-                      </div>
+                {/* GRÁFICO CIRCULAR DOUGHNUT (Como el anillo 45% en la imagen de referencia) */}
+                <div
+                  style={{
+                    backgroundColor: "#ffffff",
+                    borderRadius: "0.75rem",
+                    padding: "1.5rem",
+                    boxShadow: "0 10px 25px rgba(0,0,0,0.05)",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  {/* Anillo Doughnut SVG */}
+                  <div style={{ position: "relative", width: "130px", height: "130px", margin: "0.5rem 0" }}>
+                    <svg viewBox="0 0 36 36" style={{ width: "100%", height: "100%", transform: "rotate(-90deg)" }}>
+                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="#0d253f" strokeWidth="4.5" />
+                      <path
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke="#ff9800"
+                        strokeWidth="4.5"
+                        strokeDasharray={`${stats.efficiencyPct}, 100`}
+                      />
+                    </svg>
+                    <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", textAlign: "center" }}>
+                      <span style={{ fontSize: "1.35rem", fontWeight: "900", color: "#0d253f" }}>
+                        {stats.efficiencyPct}%
+                      </span>
                     </div>
                   </div>
+
+                  {/* Lista de Estados del Taller */}
+                  <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "0.45rem", margin: "1rem 0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "#64748b", borderBottom: "1px solid #f1f5f9", paddingBottom: "0.3rem" }}>
+                      <span>En Cola de Espera</span>
+                      <strong style={{ color: "#ff9800" }}>{stats.cola}</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "#64748b", borderBottom: "1px solid #f1f5f9", paddingBottom: "0.3rem" }}>
+                      <span>En Laboratorio</span>
+                      <strong style={{ color: "#0d253f" }}>{stats.proceso}</strong>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "#64748b" }}>
+                      <span>Listas para Entrega</span>
+                      <strong style={{ color: "#10b981" }}>{stats.listo}</strong>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setActiveTab("orders")}
+                    style={{
+                      width: "100%",
+                      padding: "0.6rem",
+                      backgroundColor: "#ff9800",
+                      color: "#ffffff",
+                      borderRadius: "0.5rem",
+                      border: "none",
+                      fontSize: "0.82rem",
+                      fontWeight: "800",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 10px rgba(255,152,0,0.3)",
+                    }}
+                  >
+                    Gestionar Taller
+                  </button>
                 </div>
               </div>
 
-              {/* Gráfico 3: Demanda de Lunas y Tratamientos Oftálmicos */}
-              <div style={{ backgroundColor: "rgba(15, 23, 42, 0.8)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.5rem" }}>
-                <h2 style={{ fontSize: "1.1rem", fontWeight: "700", color: "#fff", margin: "0 0 0.35rem 0" }}>
-                  Tratamientos Oftálmicos Más Solicitados en Trujillo
-                </h2>
-                <p style={{ fontSize: "0.75rem", color: "#94a3b8", margin: "0 0 1.25rem 0" }}>
-                  Porcentaje de fórmulas graduadas con tecnología digital y protección UV
-                </p>
-
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1.25rem" }}>
-                  {metrics.treatments.map((t) => (
-                    <div key={t.name} style={{ backgroundColor: "rgba(2, 6, 23, 0.5)", border: "1px solid rgba(255, 255, 255, 0.05)", borderRadius: "0.75rem", padding: "1rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                        <span style={{ fontSize: "0.82rem", fontWeight: "600", color: "#e2e8f0" }}>{t.name}</span>
-                        <strong style={{ fontSize: "0.9rem", color: t.color }}>{t.pct}%</strong>
-                      </div>
-                      <div style={{ width: "100%", height: "8px", backgroundColor: "rgba(255, 255, 255, 0.08)", borderRadius: "9999px", overflow: "hidden" }}>
-                        <div style={{ width: `${t.pct}%`, height: "100%", backgroundColor: t.color, borderRadius: "9999px" }}></div>
-                      </div>
+              {/* FILA INFERIOR: GRÁFICO DE ONDAS / CURVAS (WAVE CHART) & CALENDARIO SEMANAL */}
+              <div
+                style={{
+                  backgroundColor: "#ffffff",
+                  borderRadius: "0.75rem",
+                  padding: "1.5rem",
+                  boxShadow: "0 10px 25px rgba(0,0,0,0.05)",
+                  display: "grid",
+                  gridTemplateColumns: "2.1fr 1fr",
+                  gap: "1.5rem",
+                  alignItems: "center",
+                }}
+              >
+                {/* Gráfico de Ondas / Curvas Suaves en Amarillo y Azul */}
+                <div>
+                  <div style={{ display: "flex", gap: "1.5rem", marginBottom: "0.75rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.78rem", color: "#64748b", fontWeight: "600" }}>
+                      <span style={{ width: "8px", height: "8px", backgroundColor: "#ff9800", borderRadius: "50%" }}></span>
+                      Tratamiento Blue Protect
                     </div>
-                  ))}
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.78rem", color: "#64748b", fontWeight: "600" }}>
+                      <span style={{ width: "8px", height: "8px", backgroundColor: "#0d253f", borderRadius: "50%" }}></span>
+                      Lunas Progresivas
+                    </div>
+                  </div>
+
+                  {/* Curva SVG Wave */}
+                  <div style={{ height: "130px", width: "100%" }}>
+                    <svg viewBox="0 0 500 120" style={{ width: "100%", height: "100%" }} preserveAspectRatio="none">
+                      <defs>
+                        <linearGradient id="gradOrange" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#ff9800" stopOpacity="0.6" />
+                          <stop offset="100%" stopColor="#ff9800" stopOpacity="0.02" />
+                        </linearGradient>
+                        <linearGradient id="gradBlue" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#0d253f" stopOpacity="0.7" />
+                          <stop offset="100%" stopColor="#0d253f" stopOpacity="0.05" />
+                        </linearGradient>
+                      </defs>
+
+                      {/* Onda Azul */}
+                      <path
+                        d="M 0 80 Q 70 30, 140 70 T 280 60 T 420 40 L 500 70 L 500 120 L 0 120 Z"
+                        fill="url(#gradBlue)"
+                      />
+                      <path
+                        d="M 0 80 Q 70 30, 140 70 T 280 60 T 420 40 L 500 70"
+                        fill="none"
+                        stroke="#0d253f"
+                        strokeWidth="3"
+                      />
+
+                      {/* Onda Naranja */}
+                      <path
+                        d="M 0 95 Q 80 85, 150 50 T 300 20 T 420 80 L 500 85 L 500 120 L 0 120 Z"
+                        fill="url(#gradOrange)"
+                      />
+                      <path
+                        d="M 0 95 Q 80 85, 150 50 T 300 20 T 420 80 L 500 85"
+                        fill="none"
+                        stroke="#ff9800"
+                        strokeWidth="3"
+                      />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Mini Calendario de Turnos Clínicos */}
+                <div style={{ borderLeft: "1px solid #f1f5f9", paddingLeft: "1.5rem" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "0.25rem", textAlign: "center", fontSize: "0.68rem", fontWeight: "700", color: "#64748b", marginBottom: "0.4rem" }}>
+                    <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "0.25rem", textAlign: "center", fontSize: "0.72rem", color: "#334155" }}>
+                    <span style={{ color: "#cbd5e1" }}>29</span><span style={{ color: "#cbd5e1" }}>30</span><span>1</span><span>2</span><span>3</span>
+                    <span style={{ backgroundColor: "#0d253f", color: "#fff", borderRadius: "3px", fontWeight: "700" }}>4</span><span>5</span>
+                    <span>6</span><span>7</span><span>8</span><span>9</span>
+                    <span style={{ backgroundColor: "#ff9800", color: "#fff", borderRadius: "3px", fontWeight: "700" }}>10</span><span>11</span><span>12</span>
+                    <span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span><span>19</span>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* =========================================================================
-              VISTA 2: ÓRDENES DE LABORATORIO & TALLER
-              ========================================================================= */}
+          {/* VISTA 2: GESTIÓN DE TALLER & LABORATORIO */}
           {activeTab === "orders" && (
-            <div style={{ backgroundColor: "rgba(15, 23, 42, 0.8)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.5rem" }}>
+            <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "1.75rem", boxShadow: "0 10px 25px rgba(0,0,0,0.05)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
                 <div>
-                  <h2 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#fff", margin: 0 }}>Órdenes de Laboratorio</h2>
-                  <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: "0.2rem 0 0 0" }}>Control de recetas, biselado y recojo en tienda</p>
+                  <h2 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#0d253f", margin: 0 }}>Órdenes de Laboratorio</h2>
+                  <p style={{ fontSize: "0.82rem", color: "#64748b", margin: "0.2rem 0 0 0" }}>Control de recetas, biselado y recojo en tienda</p>
                 </div>
 
-                {/* Filtros de Estado */}
-                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: "0.4rem" }}>
                   {["all", "cola", "proceso", "listo"].map((st) => (
                     <button
                       key={st}
                       onClick={() => setStatusFilter(st)}
                       style={{
                         padding: "0.35rem 0.75rem",
-                        borderRadius: "0.45rem",
+                        borderRadius: "0.4rem",
                         border: "none",
-                        backgroundColor: statusFilter === st ? "#0d9488" : "rgba(255, 255, 255, 0.08)",
-                        color: "#fff",
+                        backgroundColor: statusFilter === st ? "#0d253f" : "#f1f5f9",
+                        color: statusFilter === st ? "#ffffff" : "#475569",
                         fontSize: "0.8rem",
-                        fontWeight: "600",
+                        fontWeight: "700",
                         cursor: "pointer",
-                        textTransform: "capitalize"
+                        textTransform: "capitalize",
                       }}
                     >
                       {st === "all" ? "Todas" : st}
@@ -812,342 +922,244 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              {/* Buscador */}
+              {/* Buscador de Ticket */}
               <div style={{ marginBottom: "1.25rem" }}>
                 <input
                   type="text"
                   placeholder="Buscar por código de ticket (ej. LGT-2026-6551)..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ width: "100%", maxWidth: "420px", padding: "0.65rem 1rem", backgroundColor: "rgba(2, 6, 23, 0.7)", border: "1px solid rgba(255, 255, 255, 0.12)", borderRadius: "0.55rem", color: "#fff", fontSize: "0.85rem", outline: "none" }}
+                  style={{ width: "100%", maxWidth: "380px", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem", fontSize: "0.85rem", outline: "none" }}
                 />
               </div>
 
-              {/* Tabla de Órdenes */}
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
                   <thead>
-                    <tr style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.1)", color: "#94a3b8", fontSize: "0.78rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    <tr style={{ borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: "0.78rem", textTransform: "uppercase" }}>
                       <th style={{ padding: "0.75rem 1rem" }}>Ticket</th>
-                      <th style={{ padding: "0.75rem 1rem" }}>Estado Actual</th>
+                      <th style={{ padding: "0.75rem 1rem" }}>Estado</th>
                       <th style={{ padding: "0.75rem 1rem" }}>Prioridad</th>
-                      <th style={{ padding: "0.75rem 1rem" }}>Cambiar Estado</th>
+                      <th style={{ padding: "0.75rem 1rem" }}>Actualizar Estado</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredOrders.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} style={{ textAlign: "center", padding: "2.5rem", color: "#64748b" }}>
-                          No se encontraron órdenes con esos criterios.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredOrders.map((order) => {
-                        const isUrgente = Boolean(order.urgente);
-                        return (
-                          <tr key={order.id || order.numero_ticket} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.05)", fontSize: "0.88rem" }}>
-                            <td style={{ padding: "1rem", fontWeight: "700", color: "#fff" }}>
-                              {order.numero_ticket}
-                            </td>
-                            <td style={{ padding: "1rem" }}>
-                              <span
-                                style={{
-                                  display: "inline-block",
-                                  padding: "0.2rem 0.6rem",
-                                  borderRadius: "9999px",
-                                  fontSize: "0.75rem",
-                                  fontWeight: "700",
-                                  backgroundColor:
-                                    order.estado === "listo"
-                                      ? "rgba(16, 185, 129, 0.15)"
-                                      : order.estado === "proceso"
-                                      ? "rgba(2, 132, 199, 0.15)"
-                                      : "rgba(245, 158, 11, 0.15)",
-                                  color:
-                                    order.estado === "listo"
-                                      ? "#34d399"
-                                      : order.estado === "proceso"
-                                      ? "#38bdf8"
-                                      : "#fbbf24",
-                                  textTransform: "capitalize"
-                                }}
-                              >
-                                {order.estado}
-                              </span>
-                            </td>
-                            <td style={{ padding: "1rem" }}>
-                              <button
-                                onClick={() => updateOrder(order, order.estado, !isUrgente)}
-                                style={{
-                                  padding: "0.25rem 0.6rem",
-                                  borderRadius: "0.4rem",
-                                  border: "none",
-                                  backgroundColor: isUrgente ? "rgba(239, 68, 68, 0.2)" : "rgba(255, 255, 255, 0.06)",
-                                  color: isUrgente ? "#f87171" : "#94a3b8",
-                                  fontSize: "0.75rem",
-                                  fontWeight: "700",
-                                  cursor: "pointer"
-                                }}
-                              >
-                                {isUrgente ? "⚡ URGENTE" : "Normal"}
-                              </button>
-                            </td>
-                            <td style={{ padding: "1rem" }}>
-                              <select
-                                value={order.estado}
-                                onChange={(e) => updateOrder(order, e.target.value)}
-                                style={{
-                                  padding: "0.45rem 0.75rem",
-                                  backgroundColor: "rgba(2, 6, 23, 0.8)",
-                                  border: "1px solid rgba(255, 255, 255, 0.15)",
-                                  borderRadius: "0.45rem",
-                                  color: "#fff",
-                                  fontSize: "0.82rem",
-                                  cursor: "pointer",
-                                  outline: "none"
-                                }}
-                              >
-                                {STATES.map((st) => (
-                                  <option key={st} value={st}>
-                                    {st === "cola" ? "En Cola de Espera" : st === "proceso" ? "En Laboratorio" : "Listo en Tienda"}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
+                    {filteredOrders.map((order) => {
+                      const isUrgente = Boolean(order.urgente);
+                      return (
+                        <tr key={order.id || order.numero_ticket} style={{ borderBottom: "1px solid #f1f5f9", fontSize: "0.88rem" }}>
+                          <td style={{ padding: "1rem", fontWeight: "800", color: "#0d253f" }}>
+                            {order.numero_ticket}
+                          </td>
+                          <td style={{ padding: "1rem" }}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "0.25rem 0.65rem",
+                                borderRadius: "9999px",
+                                fontSize: "0.75rem",
+                                fontWeight: "700",
+                                backgroundColor:
+                                  order.estado === "listo"
+                                    ? "#dcfce7"
+                                    : order.estado === "proceso"
+                                    ? "#e0f2fe"
+                                    : "#fef3c7",
+                                color:
+                                  order.estado === "listo"
+                                    ? "#15803d"
+                                    : order.estado === "proceso"
+                                    ? "#0369a1"
+                                    : "#b45309",
+                                textTransform: "capitalize",
+                              }}
+                            >
+                              {order.estado}
+                            </span>
+                          </td>
+                          <td style={{ padding: "1rem" }}>
+                            <button
+                              onClick={() => updateOrder(order, order.estado, !isUrgente)}
+                              style={{
+                                padding: "0.25rem 0.6rem",
+                                borderRadius: "0.4rem",
+                                border: "none",
+                                backgroundColor: isUrgente ? "#fee2e2" : "#f1f5f9",
+                                color: isUrgente ? "#b91c1c" : "#64748b",
+                                fontSize: "0.75rem",
+                                fontWeight: "700",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {isUrgente ? "⚡ URGENTE" : "Normal"}
+                            </button>
+                          </td>
+                          <td style={{ padding: "1rem" }}>
+                            <select
+                              value={order.estado}
+                              onChange={(e) => updateOrder(order, e.target.value)}
+                              style={{
+                                padding: "0.4rem 0.75rem",
+                                border: "1px solid #cbd5e1",
+                                borderRadius: "0.4rem",
+                                fontSize: "0.82rem",
+                                outline: "none",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {STATES.map((st) => (
+                                <option key={st} value={st}>
+                                  {st === "cola" ? "En Cola de Espera" : st === "proceso" ? "En Laboratorio" : "Listo en Tienda"}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* =========================================================================
-              VISTA 3: PACIENTES & HISTORIAS
-              ========================================================================= */}
+          {/* VISTA 3: PACIENTES */}
           {activeTab === "patients" && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "1.5rem" }}>
-              {/* Formulario Nuevo Paciente */}
-              <div style={{ backgroundColor: "rgba(15, 23, 42, 0.8)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.5rem" }}>
-                <h2 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#fff", margin: "0 0 0.35rem 0" }}>Registrar Paciente</h2>
-                <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: "0 0 1.25rem 0" }}>Añade una nueva historia clínica al sistema</p>
-
-                {patientSuccess && (
-                  <div style={{ padding: "0.75rem 1rem", backgroundColor: "rgba(16, 185, 129, 0.15)", border: "1px solid rgba(16, 185, 129, 0.3)", borderRadius: "0.5rem", color: "#34d399", fontSize: "0.85rem", marginBottom: "1rem" }}>
-                    {patientSuccess}
-                  </div>
-                )}
-
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
+              <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "1.75rem", boxShadow: "0 10px 25px rgba(0,0,0,0.05)" }}>
+                <h2 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#0d253f", margin: "0 0 1.25rem 0" }}>Registrar Nuevo Paciente</h2>
+                {patientSuccess && <div style={{ color: "#15803d", fontSize: "0.85rem", marginBottom: "1rem" }}>{patientSuccess}</div>}
                 <form onSubmit={savePatient} style={{ display: "grid", gap: "0.85rem" }}>
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", marginBottom: "0.25rem" }}>DNI (8 Dígitos)</label>
-                    <input
-                      type="text"
-                      maxLength={8}
-                      placeholder="12345678"
-                      value={patient.dni}
-                      onChange={(e) => setPatient({ ...patient, dni: e.target.value })}
-                      required
-                      style={{ width: "100%", padding: "0.65rem 0.85rem", backgroundColor: "rgba(2, 6, 23, 0.7)", border: "1px solid rgba(255, 255, 255, 0.12)", borderRadius: "0.5rem", color: "#fff", fontSize: "0.88rem", outline: "none" }}
-                    />
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", marginBottom: "0.25rem" }}>Nombres</label>
-                      <input
-                        type="text"
-                        placeholder="Nombres"
-                        value={patient.nombres}
-                        onChange={(e) => setPatient({ ...patient, nombres: e.target.value })}
-                        required
-                        style={{ width: "100%", padding: "0.65rem 0.85rem", backgroundColor: "rgba(2, 6, 23, 0.7)", border: "1px solid rgba(255, 255, 255, 0.12)", borderRadius: "0.5rem", color: "#fff", fontSize: "0.88rem", outline: "none" }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", marginBottom: "0.25rem" }}>Apellido Paterno</label>
-                      <input
-                        type="text"
-                        placeholder="Apellido"
-                        value={patient.apellido_paterno}
-                        onChange={(e) => setPatient({ ...patient, apellido_paterno: e.target.value })}
-                        required
-                        style={{ width: "100%", padding: "0.65rem 0.85rem", backgroundColor: "rgba(2, 6, 23, 0.7)", border: "1px solid rgba(255, 255, 255, 0.12)", borderRadius: "0.5rem", color: "#fff", fontSize: "0.88rem", outline: "none" }}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", marginBottom: "0.25rem" }}>Apellido Materno</label>
-                      <input
-                        type="text"
-                        placeholder="Apellido materno"
-                        value={patient.apellido_materno}
-                        onChange={(e) => setPatient({ ...patient, apellido_materno: e.target.value })}
-                        style={{ width: "100%", padding: "0.65rem 0.85rem", backgroundColor: "rgba(2, 6, 23, 0.7)", border: "1px solid rgba(255, 255, 255, 0.12)", borderRadius: "0.5rem", color: "#fff", fontSize: "0.88rem", outline: "none" }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ display: "block", fontSize: "0.75rem", color: "#94a3b8", marginBottom: "0.25rem" }}>Celular / WhatsApp</label>
-                      <input
-                        type="tel"
-                        placeholder="958169535"
-                        value={patient.celular}
-                        onChange={(e) => setPatient({ ...patient, celular: e.target.value })}
-                        style={{ width: "100%", padding: "0.65rem 0.85rem", backgroundColor: "rgba(2, 6, 23, 0.7)", border: "1px solid rgba(255, 255, 255, 0.12)", borderRadius: "0.5rem", color: "#fff", fontSize: "0.88rem", outline: "none" }}
-                      />
-                    </div>
-                  </div>
-
+                  <input
+                    type="text"
+                    maxLength={8}
+                    placeholder="DNI (8 dígitos)"
+                    value={patient.dni}
+                    onChange={(e) => setPatient({ ...patient, dni: e.target.value })}
+                    required
+                    style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem" }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Nombres"
+                    value={patient.nombres}
+                    onChange={(e) => setPatient({ ...patient, nombres: e.target.value })}
+                    required
+                    style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem" }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Apellido Paterno"
+                    value={patient.apellido_paterno}
+                    onChange={(e) => setPatient({ ...patient, apellido_paterno: e.target.value })}
+                    required
+                    style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem" }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Apellido Materno"
+                    value={patient.apellido_materno}
+                    onChange={(e) => setPatient({ ...patient, apellido_materno: e.target.value })}
+                    style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem" }}
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Celular / WhatsApp"
+                    value={patient.celular}
+                    onChange={(e) => setPatient({ ...patient, celular: e.target.value })}
+                    style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem" }}
+                  />
                   <button
                     type="submit"
                     disabled={savingPatient}
-                    style={{ marginTop: "0.5rem", padding: "0.75rem", backgroundColor: "#0d9488", color: "#fff", border: "none", borderRadius: "0.5rem", fontWeight: "700", cursor: "pointer" }}
+                    style={{ padding: "0.75rem", backgroundColor: "#0d253f", color: "#fff", border: "none", borderRadius: "0.5rem", fontWeight: "700", cursor: "pointer", marginTop: "0.5rem" }}
                   >
-                    {savingPatient ? "Guardando..." : "Registrar Paciente"}
+                    {savingPatient ? "Guardando..." : "Guardar Paciente"}
                   </button>
                 </form>
               </div>
 
-              {/* Lista de Pacientes Recientes */}
-              <div style={{ backgroundColor: "rgba(15, 23, 42, 0.8)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.5rem" }}>
-                <h2 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#fff", margin: "0 0 0.35rem 0" }}>Pacientes en Base de Datos</h2>
-                <p style={{ fontSize: "0.78rem", color: "#94a3b8", margin: "0 0 1.25rem 0" }}>Directorio clínico de consultas en Trujillo</p>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "380px", overflowY: "auto" }}>
-                  {(data?.patients || []).length === 0 ? (
-                    <p style={{ color: "#64748b", fontSize: "0.85rem", textAlign: "center", padding: "2rem" }}>
-                      No hay pacientes registrados aún. Completa el formulario de la izquierda.
-                    </p>
-                  ) : (
-                    data.patients.map((p) => (
-                      <div key={p.id} style={{ padding: "0.85rem", backgroundColor: "rgba(2, 6, 23, 0.5)", border: "1px solid rgba(255, 255, 255, 0.06)", borderRadius: "0.6rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <strong style={{ fontSize: "0.9rem", color: "#fff", display: "block" }}>
-                            {p.nombres} {p.apellido_paterno} {p.apellido_materno || ""}
-                          </strong>
-                          <span style={{ fontSize: "0.75rem", color: "#94a3b8" }}>DNI: {p.dni} {p.celular ? `• Cel: ${p.celular}` : ""}</span>
-                        </div>
-                        {p.celular && (
-                          <a
-                            href={`https://wa.me/51${p.celular}?text=Hola%20${encodeURIComponent(p.nombres)},%20te%20saludamos%20de%20Lens%20Group%20Trujillo.`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ padding: "0.35rem 0.65rem", backgroundColor: "rgba(16, 185, 129, 0.15)", color: "#34d399", borderRadius: "0.4rem", fontSize: "0.75rem", fontWeight: "700", textDecoration: "none" }}
-                          >
-                            WhatsApp
-                          </a>
-                        )}
+              <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "1.75rem", boxShadow: "0 10px 25px rgba(0,0,0,0.05)" }}>
+                <h2 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#0d253f", margin: "0 0 1.25rem 0" }}>Directorio de Pacientes</h2>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "400px", overflowY: "auto" }}>
+                  {(data?.patients || []).map((p) => (
+                    <div key={p.id} style={{ padding: "0.85rem", backgroundColor: "#f8fafc", borderRadius: "0.6rem", border: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <strong style={{ color: "#0d253f", display: "block", fontSize: "0.9rem" }}>{p.nombres} {p.apellido_paterno}</strong>
+                        <span style={{ fontSize: "0.75rem", color: "#64748b" }}>DNI: {p.dni} {p.celular ? `• Cel: ${p.celular}` : ""}</span>
                       </div>
-                    ))
-                  )}
+                      {p.celular && (
+                        <a
+                          href={`https://wa.me/51${p.celular}?text=Hola%20${encodeURIComponent(p.nombres)},%20te%20saludamos%20de%20Lens%20Group%20Trujillo.`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ padding: "0.3rem 0.6rem", backgroundColor: "#dcfce7", color: "#15803d", borderRadius: "0.4rem", fontSize: "0.75rem", fontWeight: "700", textDecoration: "none" }}
+                        >
+                          WhatsApp
+                        </a>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
           )}
 
-          {/* =========================================================================
-              VISTA 4: INVENTARIO & STOCK
-              ========================================================================= */}
+          {/* VISTA 4: INVENTARIO */}
           {activeTab === "inventory" && (
-            <div style={{ backgroundColor: "rgba(15, 23, 42, 0.8)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.5rem" }}>
-              <div style={{ marginBottom: "1.5rem" }}>
-                <h2 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#fff", margin: 0 }}>Inventario y Existencias</h2>
-                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: "0.2rem 0 0 0" }}>Monitoreo de monturas, lunas y alertas de reposición</p>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
-                {(data?.frames || []).length === 0 ? (
-                  // Muestra modelos de muestra si no hay monturas en Supabase
-                  [
-                    { brand: "Ray-Ban", model: "Aviator Classic Dorado (RB3025)", stock: 2, status: "critical", price: 520 },
-                    { brand: "Ray-Ban", model: "Wayfarer Midnight Black (RB2140)", stock: 8, status: "good", price: 480 },
-                    { brand: "Oakley", model: "Holbrook Polarized OO9102", stock: 3, status: "medium", price: 590 },
-                    { brand: "Vogue", model: "Cat-Eye VO5211S Acetato", stock: 4, status: "medium", price: 420 },
-                    { brand: "InkaLens", model: "Titanium Flex TR-90", stock: 9, status: "good", price: 360 },
-                    { brand: "Sylvane", model: "Elegance Rose Gold Metálico", stock: 1, status: "critical", price: 380 }
-                  ].map((item, idx) => (
-                    <div key={idx} style={{ padding: "1.25rem", backgroundColor: "rgba(2, 6, 23, 0.5)", border: "1px solid rgba(255, 255, 255, 0.06)", borderRadius: "0.75rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-                        <span style={{ fontSize: "0.75rem", fontWeight: "700", color: "#0d9488", textTransform: "uppercase" }}>{item.brand}</span>
-                        <span style={{ padding: "0.15rem 0.5rem", borderRadius: "9999px", fontSize: "0.7rem", fontWeight: "700", backgroundColor: item.status === "critical" ? "rgba(239, 68, 68, 0.2)" : item.status === "medium" ? "rgba(245, 158, 11, 0.2)" : "rgba(16, 185, 129, 0.2)", color: item.status === "critical" ? "#f87171" : item.status === "medium" ? "#fbbf24" : "#34d399" }}>
-                          {item.stock} en stock
-                        </span>
-                      </div>
-                      <h3 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#fff", margin: "0 0 0.5rem 0" }}>{item.model}</h3>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem", fontSize: "0.85rem" }}>
-                        <span style={{ color: "#94a3b8" }}>PVP:</span>
-                        <strong style={{ color: "#fff" }}>S/ {item.price}</strong>
-                      </div>
+            <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "1.75rem", boxShadow: "0 10px 25px rgba(0,0,0,0.05)" }}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#0d253f", margin: "0 0 1.25rem 0" }}>Inventario de Monturas en Tienda</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1rem" }}>
+                {[
+                  { brand: "Ray-Ban", model: "Aviator Classic Dorado (RB3025)", stock: 2, price: 520 },
+                  { brand: "Ray-Ban", model: "Wayfarer Midnight Black (RB2140)", stock: 8, price: 480 },
+                  { brand: "Oakley", model: "Holbrook Polarized OO9102", stock: 3, price: 590 },
+                  { brand: "Vogue", model: "Cat-Eye VO5211S Acetato", stock: 4, price: 420 },
+                  { brand: "InkaLens", model: "Titanium Flex TR-90", stock: 9, price: 360 },
+                  { brand: "Sylvane", model: "Elegance Rose Gold Metálico", stock: 1, price: 380 },
+                ].map((item, idx) => (
+                  <div key={idx} style={{ padding: "1.25rem", backgroundColor: "#f8fafc", borderRadius: "0.75rem", border: "1px solid #e2e8f0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+                      <span style={{ fontSize: "0.75rem", fontWeight: "800", color: "#0d253f" }}>{item.brand}</span>
+                      <span style={{ padding: "0.15rem 0.5rem", borderRadius: "9999px", fontSize: "0.7rem", fontWeight: "700", backgroundColor: item.stock <= 2 ? "#fee2e2" : "#dcfce7", color: item.stock <= 2 ? "#b91c1c" : "#15803d" }}>
+                        {item.stock} en stock
+                      </span>
                     </div>
-                  ))
-                ) : (
-                  data.frames.map((item) => (
-                    <div key={item.id} style={{ padding: "1.25rem", backgroundColor: "rgba(2, 6, 23, 0.5)", border: "1px solid rgba(255, 255, 255, 0.06)", borderRadius: "0.75rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-                        <span style={{ fontSize: "0.75rem", fontWeight: "700", color: "#0d9488" }}>{item.marca}</span>
-                        <span style={{ padding: "0.15rem 0.5rem", borderRadius: "9999px", fontSize: "0.7rem", fontWeight: "700", backgroundColor: item.cantidad <= 2 ? "rgba(239, 68, 68, 0.2)" : "rgba(16, 185, 129, 0.2)", color: item.cantidad <= 2 ? "#f87171" : "#34d399" }}>
-                          {item.cantidad} en stock
-                        </span>
-                      </div>
-                      <h3 style={{ fontSize: "0.95rem", fontWeight: "700", color: "#fff", margin: "0 0 0.5rem 0" }}>{item.modelo || item.codigo}</h3>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.75rem", fontSize: "0.85rem" }}>
-                        <span style={{ color: "#94a3b8" }}>Precio:</span>
-                        <strong style={{ color: "#fff" }}>S/ {item.precio_venta}</strong>
-                      </div>
-                    </div>
-                  ))
-                )}
+                    <div style={{ fontSize: "0.9rem", fontWeight: "700", color: "#1e293b", margin: "0.3rem 0" }}>{item.model}</div>
+                    <div style={{ fontSize: "0.85rem", color: "#64748b" }}>Precio Venta: <strong>S/ {item.price}</strong></div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
-          {/* =========================================================================
-              VISTA 5: VENTAS & FACTURACIÓN
-              ========================================================================= */}
+          {/* VISTA 5: REPORTE & VENTAS */}
           {activeTab === "sales" && (
-            <div style={{ backgroundColor: "rgba(15, 23, 42, 0.8)", border: "1px solid rgba(255, 255, 255, 0.08)", borderRadius: "1rem", padding: "1.5rem" }}>
-              <div style={{ marginBottom: "1.5rem" }}>
-                <h2 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#fff", margin: 0 }}>Historial de Ventas</h2>
-                <p style={{ fontSize: "0.8rem", color: "#94a3b8", margin: "0.2rem 0 0 0" }}>Registro de compras de lunas y monturas por ticket</p>
-              </div>
-
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.1)", color: "#94a3b8", fontSize: "0.78rem", textTransform: "uppercase" }}>
-                      <th style={{ padding: "0.75rem 1rem" }}>Ticket</th>
-                      <th style={{ padding: "0.75rem 1rem" }}>Montura</th>
-                      <th style={{ padding: "0.75rem 1rem" }}>Tratamiento / Luna</th>
-                      <th style={{ padding: "0.75rem 1rem" }}>Entrega</th>
+            <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "1.75rem", boxShadow: "0 10px 25px rgba(0,0,0,0.05)" }}>
+              <h2 style={{ fontSize: "1.2rem", fontWeight: "800", color: "#0d253f", margin: "0 0 1.25rem 0" }}>Registro de Ventas &amp; Facturación</h2>
+              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+                <thead>
+                  <tr style={{ borderBottom: "2px solid #e2e8f0", color: "#64748b", fontSize: "0.78rem", textTransform: "uppercase" }}>
+                    <th style={{ padding: "0.75rem 1rem" }}>Ticket</th>
+                    <th style={{ padding: "0.75rem 1rem" }}>Montura</th>
+                    <th style={{ padding: "0.75rem 1rem" }}>Luna / Tratamiento</th>
+                    <th style={{ padding: "0.75rem 1rem" }}>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.sales || []).map((sale) => (
+                    <tr key={sale.id} style={{ borderBottom: "1px solid #f1f5f9", fontSize: "0.88rem" }}>
+                      <td style={{ padding: "1rem", fontWeight: "800", color: "#0d253f" }}>{sale.numero_ticket}</td>
+                      <td style={{ padding: "1rem" }}>{sale.montura_descripcion || "Montura oficial"}</td>
+                      <td style={{ padding: "1rem", color: "#0284c7" }}>{sale.luna_descripcion || "Cristales Blue Protect"}</td>
+                      <td style={{ padding: "1rem", color: "#15803d", fontWeight: "700" }}>{sale.estado_entrega || "Listo"}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {(data?.sales || []).length === 0 ? (
-                      <tr>
-                        <td colSpan={4} style={{ textAlign: "center", padding: "2.5rem", color: "#64748b" }}>
-                          No hay ventas registradas aún. Al cambiar el estado a &quot;listo&quot; o crear órdenes se añadirán automáticamente.
-                        </td>
-                      </tr>
-                    ) : (
-                      data.sales.map((sale) => (
-                        <tr key={sale.id} style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.05)", fontSize: "0.88rem" }}>
-                          <td style={{ padding: "1rem", fontWeight: "700", color: "#fff" }}>{sale.numero_ticket}</td>
-                          <td style={{ padding: "1rem", color: "#e2e8f0" }}>{sale.montura_descripcion || "Montura institucional"}</td>
-                          <td style={{ padding: "1rem", color: "#38bdf8" }}>{sale.luna_descripcion || "Cristales Blue Protect"}</td>
-                          <td style={{ padding: "1rem", color: "#94a3b8" }}>{sale.fecha_entrega || "En laboratorio"}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
-        </main>
+        </div>
       </div>
     </div>
   );
