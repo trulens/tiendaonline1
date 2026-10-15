@@ -6,6 +6,30 @@ import Link from "next/link";
 
 const STATES = ["cola", "proceso", "listo"];
 
+function generateTicket() {
+  return `LGT-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+function buildWhatsAppUrl(phone, text) {
+  if (!phone) return null;
+  const clean = String(phone).replace(/\D/g, "");
+  const full = clean.length === 9 ? `51${clean}` : clean;
+  return `https://wa.me/${full}?text=${encodeURIComponent(text)}`;
+}
+
+function getWhatsAppMessage({ name, ticket, service }) {
+  return `¡Hola ${name}! 👋 Te saludamos del Laboratorio Óptico *Lens Group Trujillo* 👓✨.\n\n` +
+    `Tu orden ha sido registrada con éxito:\n` +
+    `📋 *Código de Seguimiento:* *${ticket}*\n` +
+    `👤 *Paciente:* ${name}\n` +
+    (service ? `🔬 *Servicio:* ${service}\n` : "") +
+    `⏳ *Estado inicial:* En Cola de Laboratorio\n\n` +
+    `🔍 Puedes consultar el avance de tus lunas en tiempo real ingresando tu código aquí:\n` +
+    `👉 https://tiendaonline1.vercel.app/seguimiento\n\n` +
+    `📍 *Sede:* Galería San Antonio, Jr. Gamarra N° 778, Trujillo.\n` +
+    `¡Muchas gracias por tu preferencia! 🙌`;
+}
+
 export default function AdminDashboard() {
   const [credentials, setCredentials] = useState({ dni: "", pin: "" });
   const [session, setSession] = useState(null);
@@ -24,9 +48,19 @@ export default function AdminDashboard() {
     apellido_paterno: "",
     apellido_materno: "",
     celular: "",
+    edad: "",
+    codigo_ticket: "",
+    servicio: "Lunas Blue Protect UV400 + Montura",
   });
   const [savingPatient, setSavingPatient] = useState(false);
   const [patientSuccess, setPatientSuccess] = useState("");
+  const [whatsappDispatch, setWhatsappDispatch] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [patientSearch, setPatientSearch] = useState("");
+
+  useEffect(() => {
+    setPatient((prev) => ({ ...prev, codigo_ticket: generateTicket() }));
+  }, []);
 
   // Cargar datos reales de Supabase
   async function loadOverview() {
@@ -84,17 +118,24 @@ export default function AdminDashboard() {
     }
   }
 
-  // Guardar paciente
+  // Guardar paciente y disparar WhatsApp
   async function savePatient(event) {
     event.preventDefault();
     setSavingPatient(true);
     setPatientSuccess("");
     setError("");
+
+    const ticketToSend = patient.codigo_ticket || generateTicket();
+    const payload = {
+      ...patient,
+      codigo_ticket: ticketToSend,
+    };
+
     try {
       const response = await fetch("/api/admin/patients", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patient),
+        body: JSON.stringify(payload),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -102,8 +143,42 @@ export default function AdminDashboard() {
         setSavingPatient(false);
         return;
       }
-      setPatientSuccess(`¡Paciente ${patient.nombres} registrado con éxito!`);
-      setPatient({ dni: "", nombres: "", apellido_paterno: "", apellido_materno: "", celular: "" });
+
+      const assignedTicket = result.codigo_ticket || ticketToSend;
+      const fullName = `${patient.nombres} ${patient.apellido_paterno}`.trim();
+      const waUrl = patient.celular
+        ? buildWhatsAppUrl(
+            patient.celular,
+            getWhatsAppMessage({ name: fullName, ticket: assignedTicket, service: patient.servicio })
+          )
+        : null;
+
+      setWhatsappDispatch({
+        name: fullName,
+        phone: patient.celular,
+        ticket: assignedTicket,
+        service: patient.servicio,
+        url: waUrl,
+      });
+
+      setPatientSuccess(`¡Paciente ${fullName} registrado! Código asignado: ${assignedTicket}`);
+
+      // Abrir WhatsApp automáticamente si se ingresó número de celular
+      if (waUrl && typeof window !== "undefined") {
+        window.open(waUrl, "_blank", "noopener,noreferrer");
+      }
+
+      // Reiniciar formulario con nuevo código para el siguiente paciente
+      setPatient({
+        dni: "",
+        nombres: "",
+        apellido_paterno: "",
+        apellido_materno: "",
+        celular: "",
+        edad: "",
+        codigo_ticket: generateTicket(),
+        servicio: "Lunas Blue Protect UV400 + Montura",
+      });
       await loadOverview();
     } catch (err) {
       setError("Error al registrar paciente.");
@@ -1025,81 +1100,446 @@ export default function AdminDashboard() {
 
           {/* VISTA 3: PACIENTES */}
           {activeTab === "patients" && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: "1.5rem" }}>
+              {/* COLUMNA 1: FORMULARIO DE REGISTRO */}
               <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "1.75rem", boxShadow: "0 10px 25px rgba(0,0,0,0.05)" }}>
-                <h2 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#0d253f", margin: "0 0 1.25rem 0" }}>Registrar Nuevo Paciente</h2>
-                {patientSuccess && <div style={{ color: "#15803d", fontSize: "0.85rem", marginBottom: "1rem" }}>{patientSuccess}</div>}
+                <div style={{ marginBottom: "1.25rem" }}>
+                  <h2 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#0d253f", margin: 0 }}>
+                    👤 Registrar Nuevo Paciente
+                  </h2>
+                  <p style={{ fontSize: "0.82rem", color: "#64748b", margin: "0.25rem 0 0" }}>
+                    Registra al paciente, genera su orden de taller y envíale su código de seguimiento por WhatsApp.
+                  </p>
+                </div>
+
+                {/* BANNER / TARJETA DE CÓDIGO WHATSAPP GENERADO */}
+                {whatsappDispatch && (
+                  <div
+                    style={{
+                      marginBottom: "1.25rem",
+                      padding: "1.25rem",
+                      borderRadius: "0.75rem",
+                      background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)",
+                      border: "2px solid #22c55e",
+                      boxShadow: "0 6px 18px rgba(34, 197, 94, 0.15)",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                      <div>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", color: "#15803d", fontWeight: "800", fontSize: "0.95rem" }}>
+                          <span>✅</span> ¡Paciente Registrado con Éxito!
+                        </div>
+                        <div style={{ fontSize: "0.82rem", color: "#166534", marginTop: "0.2rem" }}>
+                          Orden creada en taller. Envía el código de seguimiento al paciente:
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setWhatsappDispatch(null)}
+                        style={{ background: "transparent", border: "none", color: "#15803d", cursor: "pointer", fontSize: "1rem", fontWeight: "700" }}
+                        title="Cerrar aviso"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Display del Ticket */}
+                    <div
+                      style={{
+                        backgroundColor: "#0d253f",
+                        color: "#ffffff",
+                        padding: "0.75rem 1rem",
+                        borderRadius: "0.5rem",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "0.85rem",
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: "0.7rem", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: "700" }}>
+                          Código de Seguimiento
+                        </div>
+                        <div style={{ fontSize: "1.25rem", fontWeight: "900", color: "#ff9800", letterSpacing: "1px" }}>
+                          {whatsappDispatch.ticket}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: "0.82rem", fontWeight: "700" }}>{whatsappDispatch.name}</div>
+                        <div style={{ fontSize: "0.74rem", color: "#cbd5e1" }}>
+                          {whatsappDispatch.phone ? `📱 ${whatsappDispatch.phone}` : "Sin celular"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Botones de acción WhatsApp */}
+                    {whatsappDispatch.url ? (
+                      <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <a
+                          href={whatsappDispatch.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{
+                            flex: "1",
+                            minWidth: "200px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: "0.5rem",
+                            padding: "0.75rem 1rem",
+                            borderRadius: "0.5rem",
+                            backgroundColor: "#25D366",
+                            color: "#ffffff",
+                            fontWeight: "800",
+                            fontSize: "0.85rem",
+                            textDecoration: "none",
+                            boxShadow: "0 4px 12px rgba(37, 211, 102, 0.4)",
+                          }}
+                        >
+                          <span style={{ fontSize: "1.1rem" }}>📲</span> Enviar Código por WhatsApp
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const msg = getWhatsAppMessage(whatsappDispatch);
+                            navigator.clipboard.writeText(msg);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2500);
+                          }}
+                          style={{
+                            padding: "0.75rem 1rem",
+                            borderRadius: "0.5rem",
+                            border: "1px solid #16a34a",
+                            backgroundColor: "#ffffff",
+                            color: "#15803d",
+                            fontWeight: "700",
+                            fontSize: "0.82rem",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {copied ? "✓ Copiado" : "📋 Copiar Texto"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: "0.8rem", color: "#b91c1c" }}>
+                        ⚠️ No se ingresó celular. Puedes compartir manualmente el código: <b>{whatsappDispatch.ticket}</b>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <form onSubmit={savePatient} style={{ display: "grid", gap: "0.85rem" }}>
-                  <input
-                    type="text"
-                    maxLength={8}
-                    placeholder="DNI (8 dígitos)"
-                    value={patient.dni}
-                    onChange={(e) => setPatient({ ...patient, dni: e.target.value })}
-                    required
-                    style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem" }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Nombres"
-                    value={patient.nombres}
-                    onChange={(e) => setPatient({ ...patient, nombres: e.target.value })}
-                    required
-                    style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem" }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Apellido Paterno"
-                    value={patient.apellido_paterno}
-                    onChange={(e) => setPatient({ ...patient, apellido_paterno: e.target.value })}
-                    required
-                    style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem" }}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Apellido Materno"
-                    value={patient.apellido_materno}
-                    onChange={(e) => setPatient({ ...patient, apellido_materno: e.target.value })}
-                    style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem" }}
-                  />
-                  <input
-                    type="tel"
-                    placeholder="Celular / WhatsApp"
-                    value={patient.celular}
-                    onChange={(e) => setPatient({ ...patient, celular: e.target.value })}
-                    style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem" }}
-                  />
+                  {/* DNI & Edad */}
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "0.75rem" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "700", color: "#475569", marginBottom: "0.25rem" }}>
+                        DNI del Paciente *
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={8}
+                        placeholder="8 dígitos"
+                        value={patient.dni}
+                        onChange={(e) => setPatient({ ...patient, dni: e.target.value.replace(/\D/g, "") })}
+                        required
+                        style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem", fontSize: "0.88rem" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "700", color: "#475569", marginBottom: "0.25rem" }}>
+                        Edad
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="120"
+                        placeholder="Ej. 28"
+                        value={patient.edad}
+                        onChange={(e) => setPatient({ ...patient, edad: e.target.value })}
+                        style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem", fontSize: "0.88rem" }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Nombres */}
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "700", color: "#475569", marginBottom: "0.25rem" }}>
+                      Nombres *
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Nombres completos"
+                      value={patient.nombres}
+                      onChange={(e) => setPatient({ ...patient, nombres: e.target.value })}
+                      required
+                      style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem", fontSize: "0.88rem" }}
+                    />
+                  </div>
+
+                  {/* Apellidos */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "700", color: "#475569", marginBottom: "0.25rem" }}>
+                        Apellido Paterno *
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Primer apellido"
+                        value={patient.apellido_paterno}
+                        onChange={(e) => setPatient({ ...patient, apellido_paterno: e.target.value })}
+                        required
+                        style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem", fontSize: "0.88rem" }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "700", color: "#475569", marginBottom: "0.25rem" }}>
+                        Apellido Materno
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Segundo apellido (opcional)"
+                        value={patient.apellido_materno}
+                        onChange={(e) => setPatient({ ...patient, apellido_materno: e.target.value })}
+                        style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem", fontSize: "0.88rem" }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Celular / WhatsApp */}
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "700", color: "#475569", marginBottom: "0.25rem" }}>
+                      📱 Número de Celular / WhatsApp
+                    </label>
+                    <input
+                      type="tel"
+                      maxLength={9}
+                      placeholder="Ej. 987654321 (para enviar código)"
+                      value={patient.celular}
+                      onChange={(e) => setPatient({ ...patient, celular: e.target.value.replace(/\D/g, "") })}
+                      style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem", fontSize: "0.88rem" }}
+                    />
+                    <span style={{ fontSize: "0.74rem", color: "#059669", display: "block", marginTop: "0.25rem" }}>
+                      ✨ Se abrirá WhatsApp con el código de seguimiento listo para enviar al paciente.
+                    </span>
+                  </div>
+
+                  {/* Código de Seguimiento Asignado & Botón de regenerar */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: "0.75rem", alignItems: "flex-end" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "700", color: "#475569", marginBottom: "0.25rem" }}>
+                        Código de Seguimiento (Ticket)
+                      </label>
+                      <input
+                        type="text"
+                        value={patient.codigo_ticket}
+                        onChange={(e) => setPatient({ ...patient, codigo_ticket: e.target.value })}
+                        style={{
+                          width: "100%",
+                          padding: "0.65rem 0.85rem",
+                          border: "1px solid #cbd5e1",
+                          borderRadius: "0.5rem",
+                          fontSize: "0.88rem",
+                          fontWeight: "800",
+                          color: "#0d253f",
+                          backgroundColor: "#f8fafc",
+                          letterSpacing: "0.5px",
+                        }}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPatient({ ...patient, codigo_ticket: generateTicket() })}
+                      style={{
+                        padding: "0.65rem 0.75rem",
+                        backgroundColor: "#f1f5f9",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: "0.5rem",
+                        fontSize: "0.78rem",
+                        fontWeight: "700",
+                        color: "#334155",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      🎲 Cambiar código
+                    </button>
+                  </div>
+
+                  {/* Servicio / Tratamiento */}
+                  <div>
+                    <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "700", color: "#475569", marginBottom: "0.25rem" }}>
+                      Servicio / Lunas Solicitadas
+                    </label>
+                    <select
+                      value={patient.servicio}
+                      onChange={(e) => setPatient({ ...patient, servicio: e.target.value })}
+                      style={{ width: "100%", padding: "0.65rem 0.85rem", border: "1px solid #cbd5e1", borderRadius: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}
+                    >
+                      <option value="Lunas Blue Protect UV400 + Montura">Lunas Blue Protect UV400 + Montura</option>
+                      <option value="Lunas Fotocromáticas Transitions + Montura">Lunas Fotocromáticas Transitions + Montura</option>
+                      <option value="Lunas Progresivas Digitales Multifocales">Lunas Progresivas Digitales Multifocales</option>
+                      <option value="Lunas Antirreflejo Green / Crizal">Lunas Antirreflejo Green / Crizal</option>
+                      <option value="Cristales Monofocales Básicos">Cristales Monofocales Básicos</option>
+                      <option value="Solo Montura Oftálmica">Solo Montura Oftálmica</option>
+                      <option value="Examen Visual & Medida de la Vista">Examen Visual & Medida de la Vista</option>
+                    </select>
+                  </div>
+
+                  {/* Botón Guardar */}
                   <button
                     type="submit"
                     disabled={savingPatient}
-                    style={{ padding: "0.75rem", backgroundColor: "#0d253f", color: "#fff", border: "none", borderRadius: "0.5rem", fontWeight: "700", cursor: "pointer", marginTop: "0.5rem" }}
+                    style={{
+                      padding: "0.85rem",
+                      backgroundColor: "#0d253f",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "0.5rem",
+                      fontWeight: "800",
+                      fontSize: "0.92rem",
+                      cursor: "pointer",
+                      marginTop: "0.5rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "0.5rem",
+                      boxShadow: "0 4px 12px rgba(13, 37, 63, 0.2)",
+                    }}
                   >
-                    {savingPatient ? "Guardando..." : "Guardar Paciente"}
+                    {savingPatient ? (
+                      "Guardando Paciente y Generando Código..."
+                    ) : (
+                      <>
+                        <span>📲</span> Guardar y Enviar Código por WhatsApp
+                      </>
+                    )}
                   </button>
                 </form>
               </div>
 
+              {/* COLUMNA 2: DIRECTORIO DE PACIENTES */}
               <div style={{ backgroundColor: "#ffffff", borderRadius: "0.75rem", padding: "1.75rem", boxShadow: "0 10px 25px rgba(0,0,0,0.05)" }}>
-                <h2 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#0d253f", margin: "0 0 1.25rem 0" }}>Directorio de Pacientes</h2>
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "400px", overflowY: "auto" }}>
-                  {(data?.patients || []).map((p) => (
-                    <div key={p.id} style={{ padding: "0.85rem", backgroundColor: "#f8fafc", borderRadius: "0.6rem", border: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <strong style={{ color: "#0d253f", display: "block", fontSize: "0.9rem" }}>{p.nombres} {p.apellido_paterno}</strong>
-                        <span style={{ fontSize: "0.75rem", color: "#64748b" }}>DNI: {p.dni} {p.celular ? `• Cel: ${p.celular}` : ""}</span>
-                      </div>
-                      {p.celular && (
-                        <a
-                          href={`https://wa.me/51${p.celular}?text=Hola%20${encodeURIComponent(p.nombres)},%20te%20saludamos%20de%20Lens%20Group%20Trujillo.`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ padding: "0.3rem 0.6rem", backgroundColor: "#dcfce7", color: "#15803d", borderRadius: "0.4rem", fontSize: "0.75rem", fontWeight: "700", textDecoration: "none" }}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+                  <div>
+                    <h2 style={{ fontSize: "1.15rem", fontWeight: "800", color: "#0d253f", margin: 0 }}>
+                      Directorio de Pacientes
+                    </h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748b" }}>
+                      {(data?.patients || []).length} pacientes registrados
+                    </span>
+                  </div>
+                </div>
+
+                {/* Buscador de Pacientes */}
+                <div style={{ marginBottom: "1rem" }}>
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre, DNI o celular..."
+                    value={patientSearch}
+                    onChange={(e) => setPatientSearch(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "0.6rem 0.85rem",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "0.5rem",
+                      fontSize: "0.85rem",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+
+                {/* Lista de Pacientes con botón directo de WhatsApp */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "480px", overflowY: "auto", paddingRight: "0.25rem" }}>
+                  {(data?.patients || [])
+                    .filter((p) => {
+                      if (!patientSearch) return true;
+                      const q = patientSearch.toLowerCase();
+                      return (
+                        (p.nombres || "").toLowerCase().includes(q) ||
+                        (p.apellido_paterno || "").toLowerCase().includes(q) ||
+                        (p.apellido_materno || "").toLowerCase().includes(q) ||
+                        (p.dni || "").includes(q) ||
+                        (p.celular || "").includes(q)
+                      );
+                    })
+                    .map((p) => {
+                      const fullName = `${p.nombres} ${p.apellido_paterno} ${p.apellido_materno || ""}`.trim();
+                      const associatedSale = (data?.sales || []).find((s) => s.paciente_id === p.id);
+                      const ticket = associatedSale?.numero_ticket || "";
+                      const waText = ticket
+                        ? getWhatsAppMessage({ name: p.nombres, ticket, service: associatedSale?.luna_descripcion })
+                        : `¡Hola ${p.nombres}! Te saludamos del Laboratorio Óptico Lens Group Trujillo. Puedes consultar tus órdenes en https://tiendaonline1.vercel.app/seguimiento`;
+                      const waHref = p.celular ? buildWhatsAppUrl(p.celular, waText) : null;
+
+                      return (
+                        <div
+                          key={p.id}
+                          style={{
+                            padding: "0.85rem 1rem",
+                            backgroundColor: "#f8fafc",
+                            borderRadius: "0.6rem",
+                            border: "1px solid #e2e8f0",
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: "0.75rem",
+                            flexWrap: "wrap",
+                          }}
                         >
-                          WhatsApp
-                        </a>
-                      )}
-                    </div>
-                  ))}
+                          <div style={{ flex: "1", minWidth: "180px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                              <strong style={{ color: "#0d253f", fontSize: "0.9rem" }}>{fullName}</strong>
+                              {ticket && (
+                                <span
+                                  style={{
+                                    fontSize: "0.7rem",
+                                    fontWeight: "800",
+                                    padding: "0.15rem 0.45rem",
+                                    borderRadius: "4px",
+                                    backgroundColor: "#0d253f",
+                                    color: "#ff9800",
+                                  }}
+                                >
+                                  {ticket}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: "0.75rem", color: "#64748b", marginTop: "0.2rem" }}>
+                              <span>DNI: <b>{p.dni}</b></span>
+                              {p.celular && <span> • Cel: <b>{p.celular}</b></span>}
+                              {p.ocupacion && <span> • {p.ocupacion}</span>}
+                            </div>
+                          </div>
+
+                          {/* Botón WhatsApp */}
+                          {waHref ? (
+                            <a
+                              href={waHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: "0.35rem",
+                                padding: "0.4rem 0.75rem",
+                                backgroundColor: "#25D366",
+                                color: "#ffffff",
+                                borderRadius: "0.4rem",
+                                fontSize: "0.76rem",
+                                fontWeight: "800",
+                                textDecoration: "none",
+                                boxShadow: "0 2px 6px rgba(37, 211, 102, 0.3)",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              <span>📲</span> WhatsApp
+                            </a>
+                          ) : (
+                            <span style={{ fontSize: "0.72rem", color: "#94a3b8" }}>Sin WhatsApp</span>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
             </div>
